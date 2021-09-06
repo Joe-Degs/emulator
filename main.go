@@ -6,20 +6,20 @@ import (
 	"github.com/davecgh/go-spew/spew"
 )
 
-// Set of permission types supported
-const (
-	PERM_READ  uint8 = 1 << 0 // read permission
-	PERM_WRITE       = 1 << 1 // write permission
-	PERM_EXEC        = 1 << 2 // executable permission
-	PERM_RAW         = 1 << 3 // read-after-write permission
-)
-
 // Perm represent permissions of memory addresses
 type Perm uint8
 
+// Set of permission types supported
+const (
+	PERM_READ  Perm = 1 << 0 // read permission
+	PERM_WRITE      = 1 << 1 // write permission
+	PERM_EXEC       = 1 << 2 // executable permission
+	PERM_RAW        = 1 << 3 // read-after-write permission
+)
+
 type VirtAddr uint
 
-// An isolated memory space
+// Mmu is an isolated memory space
 type Mmu struct {
 	memory      []uint8
 	permissions []Perm
@@ -34,7 +34,7 @@ func NewMmu(size uint) *Mmu {
 	}
 }
 
-// allocate region of memory as RW in the address space
+// Allocate allocates region of memory as RW in the address space
 func (m *Mmu) Allocate(size uint) VirtAddr {
 	// 16-byte align the allocation
 	alignSize := (size + 0xf) &^ 0xf
@@ -58,11 +58,13 @@ func (m *Mmu) Allocate(size uint) VirtAddr {
 	}
 
 	// mark memory as uninitialized and writable
-	m.SetPermissions(base, size, Perm(PERM_RAW|PERM_WRITE))
+	m.SetPermissions(base, size, PERM_RAW|PERM_WRITE)
 
 	return base
 }
 
+// SetPermission sets the required permissions on memory locations starting
+// from the	`addr` to `addr+size`
 func (m *Mmu) SetPermissions(addr VirtAddr, size uint, perm Perm) {
 	// set permissions for the allocated memory
 	for i := uint(addr); i < uint(addr)+size; i++ {
@@ -70,19 +72,55 @@ func (m *Mmu) SetPermissions(addr VirtAddr, size uint, perm Perm) {
 	}
 }
 
-// WriteFrom writes from buffer into memory
+// WriteFrom copies the buffer `buf` into memory checking the necessary
+// permission before doing so
 func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) {
+	//get the permission on the region of memory to write to
+	perms := m.permissions[int(addr) : len(buf)+int(addr)]
+	//fmt.Printf("%v", perms)
+
+	hasRAW := false
+	for _, p := range perms {
+		// check if any part of the memory has is read-after-write
+		hasRAW = hasRAW || ((p & PERM_RAW) != 0)
+		// check if all perms are set to write
+		if (p & PERM_WRITE) == 0 {
+			return
+		}
+	}
+
 	// copy the slice `buf` into memory pointed to by `addr`
 	copy(m.memory[int(addr):len(buf)+int(addr)], buf)
+
+	// update RAW permissions
+	if hasRAW {
+		for i, p := range perms {
+			if (p & PERM_RAW) != 0 {
+				perms[i] |= PERM_READ
+			}
+		}
+		//copy(m.permissions[int(addr):len(perms)+int(addr)], perms)
+	}
 }
 
-// Read bytes from memory into a buffer
+// ReadInto copies bytes of `len(buf)` from memory into a buffer, checking
+// the necessary permissions before doing so
 func (m *Mmu) ReadInto(addr VirtAddr, buf []uint8) {
+	//get the permission on the region of memory to read from
+	perms := m.permissions[int(addr) : len(buf)+int(addr)]
+	//fmt.Printf("%v", perms)
+
+	for _, p := range perms {
+		// check if all perms on region of memory is read
+		if (p & PERM_READ) == 0 {
+			return
+		}
+	}
 	// copy from the address pointed to by `addr` to len(buf) into `buf`
 	copy(buf, m.memory[int(addr):len(buf)+int(addr)])
 }
 
-// All the state of the emulated system
+// Emulator keeps the state of the emulated system
 type Emulator struct{ *Mmu }
 
 func NewEmulator(size uint) *Emulator {
@@ -91,10 +129,10 @@ func NewEmulator(size uint) *Emulator {
 
 func main() {
 	emu := NewEmulator(112)
-	emu.Allocate(0x16)
-	emu.WriteFrom(emu.curAlloc, []uint8("joe"))
-	buf := make([]uint8, 4)
-	emu.ReadInto(emu.curAlloc, buf)
+	tmp := emu.Allocate(0x16)
+	emu.WriteFrom(tmp, []byte("joe"))
+	buf := make([]byte, 4)
+	emu.ReadInto(tmp, buf)
 	fmt.Println(string(buf))
 	spew.Dump(emu)
 }
