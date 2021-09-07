@@ -1,11 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"sync"
-
-	"github.com/davecgh/go-spew/spew"
-)
+import "sync"
 
 // Perm represent permissions of memory addresses
 type Perm uint8
@@ -59,8 +54,7 @@ func NewMmu(size uint) *Mmu {
 	}
 }
 
-// Reset restores all memory back to the original state. This allows us to
-// create one emulator and fork it to run multiple things.
+// Reset restores all memory back to the original state.
 func (m *Mmu) Reset(other *Mmu) {
 	for addr, endAddr := range m.dirty {
 		start := int(addr)
@@ -68,10 +62,11 @@ func (m *Mmu) Reset(other *Mmu) {
 
 		// restore memory state
 		copy(m.memory[start:end], other.memory[start:end])
-
-		// clear dirty list
-		m.dirty = make(Block)
+		// restore permissions
+		copy(m.permissions[start:end], other.permissions[start:end])
 	}
+	// clear dirty list
+	m.dirty = make(Block)
 }
 
 // Fork an existing Mmu
@@ -153,6 +148,7 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) int {
 		}
 	}
 
+	// update the dirty block map
 	// aligned block to keep track of modified memory
 	blockStart := (int(addr) + DIRTY_BLOCK_SIZE) &^ DIRTY_BLOCK_SIZE
 	round := DIRTY_BLOCK_SIZE + 1
@@ -173,31 +169,12 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) int {
 func (m *Mmu) ReadInto(addr VirtAddr, buf []uint8) (n int) {
 	//get the permission on the region of memory to read from
 	perms := m.permissions[int(addr) : len(buf)+int(addr)]
-	//fmt.Printf("%v", perms)
 
-	hasRAW := false
 	for _, p := range perms {
-		// check if any part of the memory has is read-after-write
-		hasRAW = hasRAW || ((p & PERM_RAW) != 0)
 		// check if all perms on region of memory is read perm
 		if (p & PERM_READ) == 0 {
 			return 0
 		}
-	}
-
-	if hasRAW {
-		// checking if block of memory we are reading from is dirtied
-		alignedAddr := (int(addr) + DIRTY_BLOCK_SIZE) &^ DIRTY_BLOCK_SIZE
-		if alignedAddr > int(addr) {
-			alignedAddr -= (DIRTY_BLOCK_SIZE + 1)
-		}
-
-		_, ok := m.dirty[VirtAddr(alignedAddr)]
-		if !ok {
-			return 0
-		}
-		// fmt.Printf("%#x, %#x, %#x\n", addr, alignedAddr, m.dirty)
-		// panic("dirty nasty block")
 	}
 
 	// copy from the address pointed to by `addr` to len(buf) into `buf`
@@ -214,27 +191,48 @@ func (e Emulator) Fork() *Emulator {
 	return &Emulator{e.Mmu.Fork()}
 }
 
+var wg sync.WaitGroup
+
 func main() {
-	emu := NewEmulator(0x1000)
+	emu := NewEmulator(1024 * 1024)
 	tmp := emu.Allocate(4)
 	emu.WriteFrom(tmp, []byte("asdf"))
-
-	wg := sync.WaitGroup{}
 
 	wg.Add(1)
 	go func(forked *Emulator) {
 		defer wg.Done()
-
-		buf := make([]byte, 4)
-		forked.WriteFrom(tmp, []byte("asdf"))
-		n := forked.ReadInto(tmp, buf)
-		if n == 0 {
-			panic(n)
+		for i := 0; i < 1000000; i++ {
+			emu.WriteFrom(tmp, []byte("asdf"))
+			forked.Reset(emu.Mmu)
 		}
-		fmt.Printf("%x\n", buf)
-		forked.Reset(emu.Mmu)
-		spew.Dump(forked)
 	}(emu.Fork())
-
 	wg.Wait()
 }
+
+// func mainTestWriteAndReads() {
+// 	emu := NewEmulator(0x1000)
+// 	tmp := emu.Allocate(4)
+// 	emu.WriteFrom(tmp, []byte("asdf"))
+//
+// 	wg := sync.WaitGroup{}
+//
+// 	wg.Add(1)
+// 	go func(forked *Emulator) {
+// 		defer wg.Done()
+//
+// 		buf := make([]byte, 4)
+// 		forked.WriteFrom(tmp, []byte("AAAA"))
+// 		n := forked.ReadInto(tmp, buf)
+// 		if n == 0 {
+// 			panic(n)
+// 		}
+// 		fmt.Printf("dirtied: %x\n", buf)
+// 		forked.Reset(emu.Mmu)
+// 		buf = make([]byte, 4)
+// 		forked.ReadInto(tmp, buf)
+// 		fmt.Printf("after reset: %x\n", buf)
+// 		spew.Dump(forked)
+// 	}(emu.Fork())
+//
+// 	wg.Wait()
+// }
