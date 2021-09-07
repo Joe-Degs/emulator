@@ -17,8 +17,6 @@ const (
 	PERM_WRITE      = 1 << 1 // write permission
 	PERM_EXEC       = 1 << 2 // executable permission
 	PERM_RAW        = 1 << 3 // read-after-write permission
-
-	DIRTY_BIT Perm = 1 << 4 // for tracking modified memory
 )
 
 // VirtAddr is a guest virtual address
@@ -33,7 +31,10 @@ type VirtAddr uint
 // this is highly inefficiant but it doesnt
 // confuse me as the other mechanisms of keeping track of blocks
 // so its cool
-type Block = map[VirtAddr]uint
+
+// Block is a block of memory. and the block of memory is the map of the start
+// of the block to the end of the blocks that have been modified.
+type Block = map[VirtAddr]VirtAddr
 
 // Mmu is an isolated memory space
 type Mmu struct {
@@ -66,11 +67,6 @@ func (m *Mmu) Reset(other *Mmu) {
 		// restore memory state
 		copy(m.memory[start:end], other.memory[start:end])
 
-		// clear dirty byte for restored portion of memory
-		for i := start; i < end; i++ {
-			m.permissions[i] &= ^DIRTY_BIT
-		}
-
 		// clear dirty list
 		m.dirty = make(Block)
 	}
@@ -84,17 +80,6 @@ func (m *Mmu) Fork() *Mmu {
 		dirty:       make(Block),
 		curAlloc:    m.curAlloc,
 	}
-
-	// clear dirty bits for new mmu
-	for addr, size := range m.dirty {
-		start := int(addr)
-		end := int(size) + start
-
-		for i := start; i < end; i++ {
-			mmu.permissions[i] &= ^DIRTY_BIT
-		}
-	}
-
 	return mmu
 }
 
@@ -143,13 +128,10 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) int {
 	perms := m.permissions[int(addr) : len(buf)+int(addr)]
 	//fmt.Printf("%v", perms)
 
-	hasRAW, hasDirtyBitSet := false, false
+	hasRAW := false
 	for _, p := range perms {
 		// check if any part of the memory has is read-after-write
 		hasRAW = hasRAW || ((p & PERM_RAW) != 0)
-
-		// check if dirty bit is already set for memory location
-		hasDirtyBitSet = hasDirtyBitSet || ((p & DIRTY_BIT) != 0)
 
 		// check if all perms are set to write
 		if (p & PERM_WRITE) == 0 {
@@ -166,19 +148,19 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) int {
 			if (p & PERM_RAW) != 0 {
 				perms[i] |= PERM_READ
 			}
-			if !hasDirtyBitSet {
-				perms[i] |= DIRTY_BIT
-			}
 		}
 	}
 
-	// 16-byte block that has been dirtied and put in in the dirty map
+	// 16-byte aligned block to keep track of modified memory
 	blockStart := (int(addr) + 0xf) &^ 0xf
 	if blockStart > int(addr) {
 		blockStart -= 16
 	}
-	blockEnd := uint((n + 0xf) &^ 0xf)
-	m.dirty[VirtAddr(blockStart)] = blockEnd
+	// number of 16-byte blocks that have been modified
+	numBlocks := int((n+0xf)&^0xf) / 16
+
+	// add block `start - end` to dirty blocks map
+	m.dirty[VirtAddr(blockStart)] = VirtAddr(blockStart + (numBlocks * 0x10) - 1)
 	return n
 }
 
@@ -200,11 +182,18 @@ func (m *Mmu) ReadInto(addr VirtAddr, buf []uint8) (n int) {
 	}
 
 	if hasRAW {
-		for _, p := range perms {
-			if (p & DIRTY_BIT) == 0 {
-				return 0
-			}
+		// checking if block of memory we are reading from is dirtied
+		alignedAddr := (int(addr) + 0xf) &^ 0xf
+		if alignedAddr > int(addr) {
+			alignedAddr -= 16
 		}
+
+		_, ok := m.dirty[VirtAddr(alignedAddr)]
+		if !ok {
+			return 0
+		}
+		// fmt.Printf("%#x, %#x, %#x\n", addr, alignedAddr, m.dirty)
+		// panic("dirty nasty block")
 	}
 
 	// copy from the address pointed to by `addr` to len(buf) into `buf`
@@ -217,25 +206,31 @@ type Emulator struct{ *Mmu }
 
 func NewEmulator(size uint) *Emulator { return &Emulator{NewMmu(size)} }
 
+func (e Emulator) Fork() *Emulator {
+	return &Emulator{e.Mmu.Fork()}
+}
+
 func main() {
 	emu := NewEmulator(1024)
 	tmp := emu.Allocate(4)
 	emu.WriteFrom(tmp, []byte("asdf"))
+
 	wg := sync.WaitGroup{}
 
 	wg.Add(1)
-	go func(emu *Mmu) {
+	go func(forked *Emulator) {
 		defer wg.Done()
 
 		buf := make([]byte, 4)
-		n := emu.ReadInto(tmp, buf)
+		forked.WriteFrom(tmp, []byte("asdf"))
+		n := forked.ReadInto(tmp, buf)
 		if n == 0 {
 			panic(n)
 		}
 		fmt.Println(string(buf))
-		spew.Dump(emu)
+		forked.Reset(emu.Mmu)
+		spew.Dump(forked)
 	}(emu.Fork())
 
 	wg.Wait()
-	spew.Dump(emu)
 }
