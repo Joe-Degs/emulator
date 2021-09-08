@@ -17,7 +17,7 @@ const (
 )
 
 var (
-	ErrMemInaccessible = errors.New("mmu: you don't perms to access memory")
+	ErrMemIONotPermitted = errors.New("mmu: you don't perms to access memory")
 )
 
 // VirtAddr is a guest virtual address and an io.ReadWriter
@@ -126,7 +126,7 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) error {
 
 		// check if all perms are set to write
 		if (p & PERM_WRITE) == 0 {
-			return ErrMemInaccessible
+			return ErrMemIONotPermitted
 		}
 	}
 
@@ -158,20 +158,25 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) error {
 	return nil
 }
 
-// ReadInto copies bytes of `len(buf)` from memory into a buffer, checking
-// the necessary permissions before doing so
-func (m *Mmu) ReadInto(addr VirtAddr, buf []uint8) error {
+// ReadIntoPerms reads data of `len(buf)` from memory into buf only if the region
+// of memory been read has `perm` set on it
+func (m Mmu) ReadIntoPerms(addr VirtAddr, buf []uint8, perm Perm) error {
 	//get the permission on the region of memory to read from
 	perms := m.permissions[int(addr) : len(buf)+int(addr)]
 
 	for _, p := range perms {
-		// check if all perms on region of memory is read perm
-		if (p & PERM_READ) == 0 {
-			return ErrMemInaccessible
+		// check if all perms on region of memory is expected perm
+		if (p & perm) != perm {
+			return ErrMemIONotPermitted
 		}
 	}
 
 	// copy from the address pointed to by `addr` to len(buf) into `buf`
 	copy(buf, m.memory[int(addr):len(buf)+int(addr)])
 	return nil
+}
+
+// ReadInto reads data of `len(buf)` from readable memory starting at addr into buf
+func (m Mmu) ReadInto(addr VirtAddr, buf []uint8) error {
+	return m.ReadIntoPerms(addr, buf, PERM_READ)
 }

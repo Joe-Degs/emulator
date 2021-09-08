@@ -78,3 +78,8 @@ func (e *Emulator) SetReg(reg Register, val int) {
 func (e Emulator) GetReg(reg Register) int {
 	return e.registers[reg]
 }
+
+// start the emulator and execute some code
+func (e *Emulator) Run() {
+	return
+}

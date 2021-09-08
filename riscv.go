@@ -46,7 +46,6 @@ type Instruction interface {
 
 // Rtype instructions represent register to register computations
 type Rtype struct {
-	opcode uint
 	rd     Register
 	funct3 uint
 	rs1    Register
@@ -60,7 +59,6 @@ func (Rtype) Decode(inst uint) Instruction {
 
 // Itype represents register - immediate instructions
 type Itype struct {
-	opcode uint
 	rd     Register
 	funct3 uint
 	rs1    Register
@@ -73,7 +71,6 @@ func (Itype) Decode(inst uint) Instruction {
 
 // Stype represents store instructions
 type Stype struct {
-	opcode uint
 	funct3 uint
 	rs1    Register
 	rs2    Register
@@ -86,7 +83,6 @@ func (Stype) Decode(inst uint) Instruction {
 
 // Btype represents all conditional branch instructions.
 type Btype struct {
-	opcode uint
 	rd     Register
 	imm    int
 	funct3 uint
@@ -100,9 +96,8 @@ func (Btype) Decode(inst uint) Instruction {
 
 // Utype represents all upper immediate instructions
 type Utype struct {
-	opcode uint
-	rd     Register
-	imm    int
+	rd  Register
+	imm int
 }
 
 func (Utype) Decode(inst uint) Instruction {
@@ -111,9 +106,8 @@ func (Utype) Decode(inst uint) Instruction {
 
 // Jtype represents all unconditional jump instructions
 type Jtype struct {
-	opcode uint
-	rd     Register
-	imm    int
+	rd  Register
+	imm int
 }
 
 func (Jtype) Decode(inst uint) Instruction {
