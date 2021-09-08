@@ -1,213 +1,94 @@
 package main
 
-import "sync"
-
-// Perm represent permissions of memory addresses
-type Perm uint8
-
-// Enum of permission variants supported an another variant for keeping
-// track of modified memory locations.
-const (
-	PERM_READ  Perm = 1 << 0 // read permission
-	PERM_WRITE      = 1 << 1 // write permission
-	PERM_EXEC       = 1 << 2 // executable permission
-	PERM_RAW        = 1 << 3 // read-after-write permission
-
-	DIRTY_BLOCK_SIZE = 0x7f
+import (
+	"fmt"
+	"log"
+	"sync"
 )
-
-// VirtAddr is a guest virtual address
-type VirtAddr uint
-
-// type VirtMemory struct {
-// 	addr VirtAddr
-// 	size uint
-// }
-
-// A block of memory mainly for tracking modified memory,
-// this is highly inefficiant but it doesnt
-// confuse me as the other mechanisms of keeping track of blocks
-// so its cool
-
-// Block is a block of memory, it maps the start of the block to the end
-// of the block
-type Block = map[VirtAddr]VirtAddr
-
-// Mmu is an isolated memory space
-type Mmu struct {
-	// memory is blob of memory space available to the system
-	memory []uint8
-	// access restrictions on individual locations in memory
-	permissions []Perm
-	// map of modified blocks of memory
-	dirty Block
-	// tracks the current allocation
-	curAlloc VirtAddr
-}
-
-func NewMmu(size uint) *Mmu {
-	return &Mmu{
-		memory:      make([]uint8, size),
-		permissions: make([]Perm, size),
-		dirty:       make(Block),
-		curAlloc:    VirtAddr(0x800),
-	}
-}
-
-// Reset restores all memory back to the original state.
-func (m *Mmu) Reset(other *Mmu) {
-	for addr, endAddr := range m.dirty {
-		start := int(addr)
-		end := int(endAddr)
-
-		// restore memory state
-		copy(m.memory[start:end], other.memory[start:end])
-		// restore permissions
-		copy(m.permissions[start:end], other.permissions[start:end])
-	}
-	// clear dirty list
-	m.dirty = make(Block)
-}
-
-// Fork an existing Mmu
-func (m *Mmu) Fork() *Mmu {
-	mmu := &Mmu{
-		memory:      append(make([]uint8, 0, len(m.memory)), m.memory...),
-		permissions: append(make([]Perm, 0, len(m.permissions)), m.permissions...),
-		dirty:       make(Block),
-		curAlloc:    m.curAlloc,
-	}
-	return mmu
-}
-
-// Allocate allocates region of memory as RW in the address space
-func (m *Mmu) Allocate(size uint) VirtAddr {
-	// 16-byte align the allocation
-	alignSize := (size + 0xf) &^ 0xf
-
-	// get the base addr
-	base := m.curAlloc
-
-	// allocation is bigger than available memory
-	if int(base) >= len(m.memory) {
-		return 0
-	}
-
-	// update current allocation size
-	m.curAlloc += VirtAddr(alignSize)
-
-	// could not satisfy allocation without going out of memory
-	if int(m.curAlloc) > len(m.memory) {
-		// abort allocation and revert back to base
-		m.curAlloc = base
-		return 0
-	}
-
-	// mark memory as uninitialized and writable
-	m.SetPermissions(base, size, PERM_RAW|PERM_WRITE)
-
-	return base
-}
-
-// SetPermission sets the required permissions on memory locations starting
-// from the	`addr` to `addr+size`
-func (m *Mmu) SetPermissions(addr VirtAddr, size uint, perm Perm) {
-	// set permissions for the allocated memory
-	for i := uint(addr); i < uint(addr)+size; i++ {
-		m.permissions[i] = perm
-	}
-}
-
-// WriteFrom copies the buffer `buf` into memory checking the necessary
-// permission before doing so
-func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) int {
-	//get the permission on the region of memory to write to
-	perms := m.permissions[int(addr) : len(buf)+int(addr)]
-	//fmt.Printf("%v", perms)
-
-	hasRAW := false
-	for _, p := range perms {
-		// check if any part of the memory has is read-after-write
-		hasRAW = hasRAW || ((p & PERM_RAW) != 0)
-
-		// check if all perms are set to write
-		if (p & PERM_WRITE) == 0 {
-			return 0
-		}
-	}
-
-	// copy the slice `buf` into memory pointed to by `addr`
-	n := copy(m.memory[int(addr):len(buf)+int(addr)], buf)
-
-	// update permissions and allow reading after writing
-	if hasRAW {
-		for i, p := range perms {
-			if (p & PERM_RAW) != 0 {
-				perms[i] |= PERM_READ
-			}
-		}
-	}
-
-	// update the dirty block map
-	// aligned block to keep track of modified memory
-	blockStart := (int(addr) + DIRTY_BLOCK_SIZE) &^ DIRTY_BLOCK_SIZE
-	round := DIRTY_BLOCK_SIZE + 1
-	if blockStart > int(addr) {
-		blockStart -= round
-	}
-	// align block to the dirty block size
-	numBlocks := int((n+DIRTY_BLOCK_SIZE)&^DIRTY_BLOCK_SIZE) / round
-	// end index of the aligned block
-	blockEnd := VirtAddr(blockStart + (numBlocks * round) - 1)
-	// add block `start - end` to dirty blocks map
-	m.dirty[VirtAddr(blockStart)] = blockEnd
-	return n
-}
-
-// ReadInto copies bytes of `len(buf)` from memory into a buffer, checking
-// the necessary permissions before doing so
-func (m *Mmu) ReadInto(addr VirtAddr, buf []uint8) (n int) {
-	//get the permission on the region of memory to read from
-	perms := m.permissions[int(addr) : len(buf)+int(addr)]
-
-	for _, p := range perms {
-		// check if all perms on region of memory is read perm
-		if (p & PERM_READ) == 0 {
-			return 0
-		}
-	}
-
-	// copy from the address pointed to by `addr` to len(buf) into `buf`
-	n = copy(buf, m.memory[int(addr):len(buf)+int(addr)])
-	return
-}
-
-// Emulator keeps the state of the emulated system
-type Emulator struct{ *Mmu }
-
-func NewEmulator(size uint) *Emulator { return &Emulator{NewMmu(size)} }
-
-func (e Emulator) Fork() *Emulator {
-	return &Emulator{e.Mmu.Fork()}
-}
 
 var wg sync.WaitGroup
 
 func main() {
-	emu := NewEmulator(1024 * 1024)
-	tmp := emu.Allocate(4)
-	emu.WriteFrom(tmp, []byte("asdf"))
+	// Load the test elf binary at these sections and use it to test the emulator
+	// "./hello" is the test binary file and it outputs hello world to screen
+	// Elf file type is EXEC (Executable file)
+	// Entry point 0x11190
+	// There are 5 program headers, starting at offset 64
+	//
+	// Program Headers:
+	//   Type           Offset             VirtAddr           PhysAddr
+	//                  FileSiz            MemSiz              Flags  Align
+	//   PHDR           0x0000000000000040 0x0000000000010040 0x0000000000010040
+	//                  0x0000000000000118 0x0000000000000118  R      0x8
+	//   LOAD           0x0000000000000000 0x0000000000010000 0x0000000000010000
+	//                  0x0000000000000190 0x0000000000000190  R      0x1000
+	//   LOAD           0x0000000000000190 0x0000000000011190 0x0000000000011190
+	//                  0x000000000000255c 0x000000000000255c  R E    0x1000
+	//   LOAD           0x00000000000026f0 0x00000000000146f0 0x00000000000146f0
+	//                  0x00000000000000f8 0x0000000000000750  RW     0x1000
+	//   GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
+	//                  0x0000000000000000 0x0000000000000000  RW     0x0
+	//
+	//  Section to Segment mapping:
+	//   Segment Sections...
+	//    00
+	//    01     .rodata
+	//    02     .text
+	//    03     .sdata .data .sbss .bss
+	//    04
 
-	wg.Add(1)
-	go func(forked *Emulator) {
-		defer wg.Done()
-		for i := 0; i < 1000000; i++ {
-			emu.WriteFrom(tmp, []byte("asdf"))
-			forked.Reset(emu.Mmu)
-		}
-	}(emu.Fork())
-	wg.Wait()
+	emu := NewEmulator(32 * 1024 * 1024)
+
+	// Load test app into memory loading all the necessary sections too
+	err := emu.Load("./hello", []Section{
+		Section{
+			fileOffset:  0x0000000000000000,
+			memSize:     0x0000000000000190,
+			fileSize:    0x0000000000000190,
+			virtualAddr: VirtAddr(0x0000000000010000),
+			permissions: PERM_READ,
+		},
+		Section{
+			fileOffset:  0x0000000000000190,
+			memSize:     0x000000000000255c,
+			fileSize:    0x000000000000255c,
+			virtualAddr: VirtAddr(0x0000000000011190),
+			permissions: PERM_READ | PERM_EXEC,
+		},
+		Section{
+			fileOffset:  0x00000000000026f0,
+			memSize:     0x0000000000000750,
+			fileSize:    0x00000000000000f8,
+			virtualAddr: VirtAddr(0x00000000000146f0),
+			permissions: PERM_READ | PERM_WRITE,
+		},
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// read first 4 bytes of program start
+	buf := make([]byte, 4)
+	emu.ReadInto(VirtAddr(0x11190), buf)
+	emu.SetReg(Pc, 0x11190)
+	fmt.Printf("%#v, %#v\n", buf, emu.registers)
 }
+
+// func mainSpeed() {
+// 	emu := NewEmulator(1024 * 1024)
+// 	tmp := emu.Allocate(4)
+// 	emu.WriteFrom(tmp, []byte("asdf"))
+//
+// 	wg.Add(1)
+// 	go func(forked *Emulator) {
+// 		defer wg.Done()
+// 		for i := 0; i < 1000; i++ {
+// 			forked.Reset(emu.Mmu)
+// 		}
+// 	}(emu.Fork())
+// 	wg.Wait()
+// }
 
 // func mainTestWriteAndReads() {
 // 	emu := NewEmulator(0x1000)

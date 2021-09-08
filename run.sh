@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-go run main.go > out 2>&1
+go run . > out 2>&1
 vim out
