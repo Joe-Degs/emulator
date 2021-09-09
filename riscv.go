@@ -2,7 +2,7 @@
 package main
 
 // Register represents a single riscv register file
-type Register uint
+type Register uint8
 
 // variants of the risc-v register
 const (
@@ -40,82 +40,138 @@ const (
 	Pc
 )
 
+func GetReg(reg uint32) Register {
+	if reg > 31 {
+		return Zero
+	}
+	return Register(uint8(reg))
+}
+
 type Instruction interface {
-	Decode(inst uint) Instruction
+	Decode(inst uint32) Instruction
 }
 
 // Rtype instructions represent register to register computations
 type Rtype struct {
 	rd     Register
-	funct3 uint
+	funct3 uint32
 	rs1    Register
 	rs2    Register
-	funct7 uint
+	funct7 uint32
 }
 
-func (Rtype) Decode(inst uint) Instruction {
-	return Rtype{}
+func (Rtype) Decode(inst uint32) Instruction {
+	return Rtype{
+		rd:     GetReg((inst >> 7) & 0b11111),
+		funct3: (inst >> 12) & 0b111,
+		rs1:    GetReg((inst >> 15) & 0b11111),
+		rs2:    GetReg((inst >> 20) & 0b11111),
+		funct7: (inst >> 25) & 0b1111111,
+	}
 }
 
-// Itype represents register - immediate instructions
+// Itype for loads and short immediate operations
 type Itype struct {
 	rd     Register
-	funct3 uint
+	funct3 uint32
 	rs1    Register
-	imm    int
+	imm    int32
 }
 
-func (Itype) Decode(inst uint) Instruction {
-	return Itype{}
+func (Itype) Decode(inst uint32) Instruction {
+	return Itype{
+		rd:     GetReg((inst >> 7) & 0b11111),
+		funct3: (inst >> 12) & 0b111,
+		rs1:    GetReg((inst >> 15) & 0b11111),
+		imm:    int32(inst) >> 20,
+	}
 }
 
-// Stype represents store instructions
+// Stype for stores
 type Stype struct {
-	funct3 uint
+	funct3 uint32
 	rs1    Register
 	rs2    Register
-	imm    int
+	imm    int32
 }
 
-func (Stype) Decode(inst uint) Instruction {
-	return Stype{}
+func (Stype) Decode(inst uint32) Instruction {
+	imm115 := (inst >> 25) & 0b1111111
+	imm40 := (inst >> 7) & 0b11111
+	imm := (imm115 << 5) | imm40
+	// sign extend imm
+	simm := (int32(imm) << 20) >> 20
+	return Stype{
+		funct3: (inst >> 12) & 0b111,
+		rs1:    GetReg((inst >> 15) & 0b11111),
+		rs2:    GetReg((inst >> 20) & 0b11111),
+		imm:    simm,
+	}
 }
 
-// Btype represents all conditional branch instructions.
+// Btype for conditional branch operation
 type Btype struct {
 	rd     Register
-	imm    int
-	funct3 uint
+	imm    int32
+	funct3 uint32
 	rs1    Register
 	rs2    Register
 }
 
-func (Btype) Decode(inst uint) Instruction {
-	return Btype{}
+func (Btype) Decode(inst uint32) Instruction {
+	imm12 := (inst >> 31) & 0b1
+	imm105 := (inst >> 25) & 0b111111
+	imm41 := (inst >> 8) & 0b1111
+	imm11 := (inst >> 7) & 0b1
+	// pieceing them all together
+	imm := (imm12 << 12) | (imm11 << 11) | (imm105 << 5) | (imm41 << 1)
+	simm := (int32(imm) << 19) >> 19
+	return Btype{
+		rs1:    GetReg((inst >> 15) & 0b1111111),
+		rs2:    GetReg((inst >> 20) & 0b1111111),
+		funct3: (inst >> 12) & 0b111,
+		imm:    simm,
+	}
 }
 
-// Utype represents all upper immediate instructions
+// Utype for long immediate operations
 type Utype struct {
 	rd  Register
-	imm int
+	imm int32
 }
 
-func (Utype) Decode(inst uint) Instruction {
-	return Utype{}
+func (Utype) Decode(inst uint32) Instruction {
+	return Utype{
+		rd:  GetReg((inst >> 7) & 0b11111),
+		imm: int32(uint32((inst >> 12) & 0b11111111111111111111)),
+	}
 }
 
-// Jtype represents all unconditional jump instructions
+// Jtype for unconditional jump operations
 type Jtype struct {
 	rd  Register
-	imm int
+	imm int32
 }
 
-func (Jtype) Decode(inst uint) Instruction {
-	return Jtype{}
+func (Jtype) Decode(inst uint32) Instruction {
+	imm20 := (inst >> 31) & 0b1
+	imm101 := (inst >> 21) & 0b1111111111
+	imm11 := (inst >> 20) & 0b1
+	imm1912 := (inst >> 12) & 0b11111111
+
+	// shift bits to their position
+	imm := (imm20 << 20) | (imm1912 << 12) | (imm11 << 11) | (imm101 << 1)
+
+	// sign extend immediate
+	simm := (int32(imm) << 11) >> 11
+	return Jtype{
+		rd:  GetReg((inst >> 7) & 0b11111),
+		imm: simm,
+	}
 }
 
 // this will switch between the type here and return
-func Decode(inst uint, instruction Instruction) Instruction {
+func DecodeInstruction(inst uint32, instruction Instruction) Instruction {
 	switch instruction.(type) {
 	case Jtype:
 		return instruction.(Jtype).Decode(inst)

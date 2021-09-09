@@ -1,6 +1,9 @@
 package main
 
-import "errors"
+import (
+	"errors"
+	"unsafe"
+)
 
 // Perm represent permissions of memory addresses
 type Perm uint8
@@ -117,7 +120,6 @@ func (m *Mmu) SetPermissions(addr VirtAddr, size uint, perm Perm) {
 func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) error {
 	//get the permission on the region of memory to write to
 	perms := m.permissions[int(addr) : len(buf)+int(addr)]
-	//fmt.Printf("%v", perms)
 
 	hasRAW := false
 	for _, p := range perms {
@@ -179,4 +181,52 @@ func (m Mmu) ReadIntoPerms(addr VirtAddr, buf []uint8, perm Perm) error {
 // ReadInto reads data of `len(buf)` from readable memory starting at addr into buf
 func (m Mmu) ReadInto(addr VirtAddr, buf []uint8) error {
 	return m.ReadIntoPerms(addr, buf, PERM_READ)
+}
+
+// Write `val` uint32 into writable memory
+func (m *Mmu) WriteFrom32(addr VirtAddr, val uint32) error {
+	buf := *(*[4]byte)(unsafe.Pointer(&val))
+	return m.WriteFrom(addr, buf[:])
+}
+
+// Write 2-bytes to addr in memory
+func (m *Mmu) WriteFrom16(addr VirtAddr, val uint16) error {
+	buf := *(*[2]byte)(unsafe.Pointer(&val))
+	return m.WriteFrom(addr, buf[:])
+}
+
+// Write 1-byte to addr in memory
+func (m *Mmu) WriteFrom8(addr VirtAddr, val uint8) error {
+	buf := *(*[1]byte)(unsafe.Pointer(&val))
+	return m.WriteFrom(addr, buf[:])
+}
+
+// Read 4-bytes of memory starting at `addr` with permissions `perm`
+func (m Mmu) ReadInto32(addr VirtAddr, perm Perm) (inst uint32, err error) {
+	buf := make([]byte, 4)
+	err = m.ReadIntoPerms(addr, buf, perm)
+	if err == nil {
+		inst = *(*uint32)(unsafe.Pointer(&buf[0]))
+	}
+	return
+}
+
+// Read 2-bytes of memory at addr
+func (m Mmu) ReadInto16(addr VirtAddr, perm Perm) (inst uint16, err error) {
+	buf := make([]byte, 2)
+	err = m.ReadIntoPerms(addr, buf, perm)
+	if err == nil {
+		inst = *(*uint16)(unsafe.Pointer(&buf[0]))
+	}
+	return
+}
+
+// Read 1-byte of memory at addr
+func (m Mmu) ReadInto8(addr VirtAddr, perm Perm) (inst uint8, err error) {
+	buf := make([]byte, 1)
+	err = m.ReadIntoPerms(addr, buf, perm)
+	if err == nil {
+		inst = *(*uint8)(unsafe.Pointer(&buf[0]))
+	}
+	return
 }

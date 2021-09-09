@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"sync"
 )
@@ -68,9 +67,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// read first 4 bytes of program start
-	buf := make([]byte, 4)
-	emu.ReadIntoPerms(VirtAddr(0x11190), buf, PERM_EXEC)
+	//emu.ReadIntoPerms(VirtAddr(0x11190), buf, PERM_EXEC)
 	emu.SetReg(Pc, 0x11190)
-	fmt.Printf("%#v, %#v\n", buf, emu.registers)
+	emu.WriteFrom32(0, 0x4197)
+	emu.Run()
 }
