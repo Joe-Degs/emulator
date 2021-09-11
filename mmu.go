@@ -224,21 +224,6 @@ func (m *Mmu) WriteFromVal(addr VirtAddr, val interface{}) error {
 	}
 }
 
-// Given a register pointing to into executable memory, this function
-// reads a 32 bit unsigned value from that address
-func (m Mmu) ReadInstruction(addr VirtAddr) (inst uint32, err error) {
-	buf := make([]byte, 4)
-	if addr < m.programStart {
-		// panic(fmt.Errorf("less than program start %x %x\n", addr, addr|0x1000))
-		addr |= 0x1000
-	}
-	err = m.ReadIntoPerms(addr, buf, PERM_EXEC)
-	if err == nil {
-		inst = *(*uint32)(unsafe.Pointer(&buf[0]))
-	}
-	return
-}
-
 // Read 4-bytes of memory starting at `addr` with permissions `perm`
 func (m Mmu) ReadInto32(addr VirtAddr, perm Perm) (inst uint32, err error) {
 	buf := make([]byte, 4)
