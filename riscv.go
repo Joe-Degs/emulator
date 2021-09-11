@@ -1,6 +1,8 @@
 // This file contains implementation of the risc-v instruction set
 package main
 
+//go:generate stringer -type=Register
+
 // Register represents a single riscv register file
 type Register uint8
 
@@ -111,7 +113,6 @@ func (Stype) Decode(inst uint32) Instruction {
 
 // Btype for conditional branch operation
 type Btype struct {
-	rd     Register
 	imm    int32
 	funct3 uint32
 	rs1    Register
@@ -171,21 +172,6 @@ func (Jtype) Decode(inst uint32) Instruction {
 }
 
 // this will switch between the type here and return
-func DecodeInstruction(inst uint32, instruction Instruction) Instruction {
-	switch instruction.(type) {
-	case Jtype:
-		return instruction.(Jtype).Decode(inst)
-	case Btype:
-		return instruction.(Btype).Decode(inst)
-	case Itype:
-		return instruction.(Itype).Decode(inst)
-	case Utype:
-		return instruction.(Utype).Decode(inst)
-	case Stype:
-		return instruction.(Stype).Decode(inst)
-	case Rtype:
-		return instruction.(Rtype).Decode(inst)
-	default:
-		panic("instruction type not implemented")
-	}
+func Decode(inst uint32, instruction Instruction) Instruction {
+	return instruction.Decode(inst)
 }

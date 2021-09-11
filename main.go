@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"reflect"
 	"sync"
 )
 
@@ -52,7 +53,7 @@ func main() {
 			memSize:     0x000000000000255c,
 			fileSize:    0x000000000000255c,
 			virtualAddr: VirtAddr(0x0000000000011190),
-			permissions: PERM_READ | PERM_EXEC,
+			permissions: PERM_EXEC,
 		},
 		Section{
 			fileOffset:  0x00000000000026f0,
@@ -68,7 +69,30 @@ func main() {
 	}
 
 	//emu.ReadIntoPerms(VirtAddr(0x11190), buf, PERM_EXEC)
-	emu.SetReg(Pc, 0x11190)
-	emu.WriteFrom32(0, 0x4197)
-	emu.Run()
+	emu.SetProgramStart(0x11190)
+
+	// set up a stack
+	stack := emu.Allocate(32 * 1024)
+	emu.SetReg(Sp, uint64(stack)+32*1024) // set sp to bottom of stack
+
+	// stack push routine
+	push := func(i interface{}) {
+		isize := reflect.ValueOf(i).Type().Size()
+		sp := emu.Reg(Sp) - uint64(isize)
+		err = emu.WriteFromVal(VirtAddr(sp), i)
+		if err != nil {
+			panic(err)
+		}
+		emu.SetReg(Sp, sp)
+	}
+
+	push(uint64(0)) // argc
+	push(uint64(0)) // argv
+	push(uint64(0)) // envp
+	push(uint64(0)) // auxp
+
+	err = emu.Run()
+	if err != nil {
+		panic(err)
+	}
 }

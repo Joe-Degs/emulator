@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 )
 
@@ -20,7 +21,7 @@ const (
 )
 
 var (
-	ErrMemIONotPermitted = errors.New("mmu: you don't perms to access memory")
+	ErrMemIONotPermitted = errors.New("mmu: you don't have perms to access memory")
 )
 
 // VirtAddr is a guest virtual address and an io.ReadWriter
@@ -34,20 +35,27 @@ type Block = map[VirtAddr]VirtAddr
 type Mmu struct {
 	// memory is blob of memory space available to the system
 	memory []uint8
+
 	// access restrictions on individual locations in memory
 	permissions []Perm
+
 	// map of modified blocks of memory
 	dirty Block
+
 	// tracks the current allocation
 	curAlloc VirtAddr
+
+	// keep track of the program start in memory
+	programStart VirtAddr
 }
 
 func NewMmu(size uint) *Mmu {
 	return &Mmu{
-		memory:      make([]uint8, size),
-		permissions: make([]Perm, size),
-		dirty:       make(Block),
-		curAlloc:    VirtAddr(0x800),
+		memory:       make([]uint8, size),
+		permissions:  make([]Perm, size),
+		dirty:        make(Block),
+		curAlloc:     VirtAddr(0x800),
+		programStart: 0,
 	}
 }
 
@@ -69,10 +77,11 @@ func (m *Mmu) Reset(other *Mmu) {
 // Fork an existing Mmu
 func (m *Mmu) Fork() *Mmu {
 	mmu := &Mmu{
-		memory:      append(make([]uint8, 0, len(m.memory)), m.memory...),
-		permissions: append(make([]Perm, 0, len(m.permissions)), m.permissions...),
-		dirty:       make(Block),
-		curAlloc:    m.curAlloc,
+		memory:       append(make([]uint8, 0, len(m.memory)), m.memory...),
+		permissions:  append(make([]Perm, 0, len(m.permissions)), m.permissions...),
+		dirty:        make(Block),
+		curAlloc:     m.curAlloc,
+		programStart: m.programStart,
 	}
 	return mmu
 }
@@ -183,22 +192,51 @@ func (m Mmu) ReadInto(addr VirtAddr, buf []uint8) error {
 	return m.ReadIntoPerms(addr, buf, PERM_READ)
 }
 
-// Write `val` uint32 into writable memory
-func (m *Mmu) WriteFrom32(addr VirtAddr, val uint32) error {
-	buf := *(*[4]byte)(unsafe.Pointer(&val))
-	return m.WriteFrom(addr, buf[:])
+// WriteFromVal provides a generic interface for writing values into memory
+func (m *Mmu) WriteFromVal(addr VirtAddr, val interface{}) error {
+	switch p := val.(type) {
+	case uint8:
+		buf := *(*[1]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	case int8:
+		buf := *(*[1]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	case uint16:
+		buf := *(*[2]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	case int16:
+		buf := *(*[2]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	case uint32:
+		buf := *(*[4]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	case int32:
+		buf := *(*[4]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	case uint64:
+		buf := *(*[8]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	case int64:
+		buf := *(*[8]byte)(unsafe.Pointer(&p))
+		return m.WriteFrom(addr, buf[:])
+	default:
+		return fmt.Errorf("mmu: value type '%T' not supported\n", val)
+	}
 }
 
-// Write 2-bytes to addr in memory
-func (m *Mmu) WriteFrom16(addr VirtAddr, val uint16) error {
-	buf := *(*[2]byte)(unsafe.Pointer(&val))
-	return m.WriteFrom(addr, buf[:])
-}
-
-// Write 1-byte to addr in memory
-func (m *Mmu) WriteFrom8(addr VirtAddr, val uint8) error {
-	buf := *(*[1]byte)(unsafe.Pointer(&val))
-	return m.WriteFrom(addr, buf[:])
+// Given a register pointing to into executable memory, this function
+// reads a 32 bit unsigned value from that address
+func (m Mmu) ReadInstruction(addr VirtAddr) (inst uint32, err error) {
+	buf := make([]byte, 4)
+	if addr < m.programStart {
+		// panic(fmt.Errorf("less than program start %x %x\n", addr, addr|0x1000))
+		addr |= 0x1000
+	}
+	err = m.ReadIntoPerms(addr, buf, PERM_EXEC)
+	if err == nil {
+		inst = *(*uint32)(unsafe.Pointer(&buf[0]))
+	}
+	return
 }
 
 // Read 4-bytes of memory starting at `addr` with permissions `perm`
@@ -227,6 +265,71 @@ func (m Mmu) ReadInto8(addr VirtAddr, perm Perm) (inst uint8, err error) {
 	err = m.ReadIntoPerms(addr, buf, perm)
 	if err == nil {
 		inst = *(*uint8)(unsafe.Pointer(&buf[0]))
+	}
+	return
+}
+
+// Read from readable memory into a val, val must be a pointer to an integer type
+func (m Mmu) ReadIntoVal(addr VirtAddr, val interface{}) (err error) {
+	switch p := val.(type) {
+	case *uint8:
+		buf := make([]byte, 1)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*uint8)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	case *uint16:
+		buf := make([]byte, 2)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*uint16)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	case *uint32:
+		buf := make([]byte, 4)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*uint32)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	case *uint64:
+		buf := make([]byte, 8)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*uint64)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	case *int8:
+		buf := make([]byte, 1)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*int8)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	case *int16:
+		buf := make([]byte, 2)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*int16)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	case *int32:
+		buf := make([]byte, 32)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*int32)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	case *int64:
+		buf := make([]byte, 8)
+		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		if err == nil {
+			*p = *(*int64)(unsafe.Pointer(&buf[0]))
+		}
+		return
+	default:
+		return fmt.Errorf("mmu: val '%T' not supported", p)
 	}
 	return
 }
