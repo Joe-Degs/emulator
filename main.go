@@ -75,6 +75,13 @@ func main() {
 	stack := emu.Allocate(32 * 1024)
 	emu.SetReg(Sp, uint64(stack)+32*1024) // set sp to bottom of stack
 
+	// set up null terminated arg values.
+	argv := emu.Allocate(8)
+	err = emu.WriteFrom(argv, []byte("hello\\0"))
+	if err != nil {
+		panic(err)
+	}
+
 	// stack push routine
 	push := func(i interface{}) {
 		isize := reflect.ValueOf(i).Type().Size()
@@ -86,10 +93,11 @@ func main() {
 		emu.SetReg(Sp, sp)
 	}
 
-	push(uint64(0)) // argc
-	push(uint64(0)) // argv
-	push(uint64(0)) // envp
 	push(uint64(0)) // auxp
+	push(uint64(0)) // envp
+	push(uint64(0)) // argv end
+	push(uint64(argv))
+	push(uint64(1)) // auxp
 
 	err = emu.Run()
 	if err != nil {

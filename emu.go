@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"unsafe"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 // Emulator keeps the state of the emulated system
 type Emulator struct {
 	*Mmu
-	registers [32]uint64
+	registers [33]uint64
 }
 
 // Section represents elf binary section
@@ -23,7 +25,7 @@ type Section struct {
 
 func NewEmulator(size uint) *Emulator {
 	return &Emulator{
-		NewMmu(size), [32]uint64{},
+		NewMmu(size), [33]uint64{},
 	}
 }
 
@@ -35,7 +37,7 @@ func (e *Emulator) SetProgramStart(addr uint64) {
 
 // Fork an emulator
 func (e Emulator) Fork() *Emulator {
-	return &Emulator{e.Mmu.Fork(), [32]uint64{}}
+	return &Emulator{e.Mmu.Fork(), [33]uint64{}}
 }
 
 func max(a, b uint) uint {
@@ -95,8 +97,8 @@ func (e *Emulator) ReadFromRegister(reg Register) (inst uint32, err error) {
 	buf := make([]byte, 4)
 	addr := VirtAddr(e.Reg(reg))
 	if addr < e.programStart {
-		e.SetReg(reg, uint64(addr|0x1000))
-		addr = VirtAddr(e.Reg(reg))
+		//e.SetReg(reg, uint64(addr|0x1000))
+		//addr = VirtAddr(e.Reg(reg))
 	}
 	err = e.ReadIntoPerms(addr, buf, PERM_EXEC)
 	if err == nil {
@@ -170,8 +172,6 @@ func (e *Emulator) Run() (err error) {
 					e.SetReg(inst.rd, 0)
 				}
 			}
-
-			e.IncRegPc()
 		case 0b0010011:
 			// Itype
 			// immediate arithmetic
@@ -230,7 +230,6 @@ func (e *Emulator) Run() (err error) {
 				panic(fmt.Errorf("uimplemented Itype with opcode: %b\n", opcode))
 			}
 
-			e.IncRegPc()
 		case 0b0000011:
 			// Itype
 			// loads
@@ -295,7 +294,6 @@ func (e *Emulator) Run() (err error) {
 				}
 				e.SetReg(inst.rd, uint64(int64(val)))
 			}
-			e.IncRegPc()
 		case 0b0100011:
 			// Stype
 			// stores
@@ -323,31 +321,31 @@ func (e *Emulator) Run() (err error) {
 					return err
 				}
 			case 0x3:
-				// SW
+				// SD
+				fmt.Printf("addr: %x %x\n", addr, val)
+				spew.Dump(inst)
 				err = e.WriteFromVal(addr, int64(val))
 				if err != nil {
 					return err
 				}
 			}
-			e.IncRegPc()
 		case 0b0110111:
 			// Utype
 			// LUI
 			inst := Decode(inst, Utype{}).(Utype)
 			e.SetReg(inst.rd, uint64(int64(inst.imm)))
-			e.IncRegPc()
 		case 0b0010111:
 			// Utype
 			// AUIPC
 			inst := Decode(inst, Utype{}).(Utype)
 			e.SetReg(inst.rd, uint64(int64(inst.imm))+pc)
-			e.IncRegPc()
 		case 0b1101111:
 			// Jtype
 			// JAL
 			inst := Decode(inst, Jtype{}).(Jtype)
 			e.SetReg(inst.rd, pc+4)
 			e.SetReg(Pc, pc+uint64(int64(inst.imm)))
+			continue
 		case 0b1100111:
 			// Itype
 			// JALR
@@ -357,8 +355,9 @@ func (e *Emulator) Run() (err error) {
 			// this does not look right. Some jalr's are jumping beyond the
 			// the program start `0x11190` in memory and this is the only sane
 			// to bring them some sense.
-			e.SetReg(Pc, (target &^ 1))
 			e.SetReg(inst.rd, pc+4)
+			e.SetReg(Pc, (target &^ 1))
+			continue
 		case 0b1100011:
 			// Btype
 			// conditional branches
@@ -372,67 +371,61 @@ func (e *Emulator) Run() (err error) {
 				if int64(rs1) == int64(rs2) {
 					simm := pc + uint64(int64(inst.imm))
 					e.SetReg(Pc, simm)
-				} else {
-					e.IncRegPc()
+					continue
 				}
 			case 0x1:
 				// BNE
 				if int64(rs1) != int64(rs2) {
 					simm := pc + uint64(int64(inst.imm))
 					e.SetReg(Pc, simm)
-				} else {
-					e.IncRegPc()
+					continue
 				}
 			case 0x2:
 				// BLT
 				if int64(rs1) < int64(rs2) {
 					simm := pc + uint64(int64(inst.imm))
 					e.SetReg(Pc, simm)
-				} else {
-					e.IncRegPc()
+					continue
 				}
 			case 0x4:
 				// BGE
 				if int64(rs1) >= int64(rs2) {
 					simm := pc + uint64(int64(inst.imm))
 					e.SetReg(Pc, simm)
-				} else {
-					e.IncRegPc()
+					continue
 				}
 			case 0x6:
 				// BLTU
 				if rs1 < rs2 {
 					simm := pc + uint64(int64(inst.imm))
 					e.SetReg(Pc, simm)
-				} else {
-					e.IncRegPc()
+					continue
 				}
 			case 0x7:
 				// BGEU
 				if rs1 >= rs2 {
 					simm := pc + uint64(int64(inst.imm))
 					e.SetReg(Pc, simm)
-				} else {
-					e.IncRegPc()
+					continue
 				}
 			}
 		case 0b0011011:
 			// Itype
 			// 32-bit arithmetic
 			inst := Decode(inst, Itype{}).(Itype)
-			rs1 := e.Reg(inst.rs1)
-			imm := inst.imm
+			rs1 := uint32(e.Reg(inst.rs1))
+			imm := uint32(inst.imm)
 
 			switch inst.funct3 {
 			case 0x0:
 				// ADDIW
-				e.SetReg(inst.rd, uint64(int64(int32(rs1)+imm)))
+				e.SetReg(inst.rd, uint64(int64(int32(rs1+imm))))
 			case 0x1:
 				// SLLIW
 				funct7 := (inst.imm >> 5) & 0b1111111
 				if funct7 == 0x0 {
 					shamt := inst.imm & 0b11111
-					e.SetReg(inst.rd, rs1<<shamt)
+					e.SetReg(inst.rd, uint64(int64(int32(rs1<<shamt))))
 				} else {
 					panic("unreachable slli")
 				}
@@ -441,15 +434,41 @@ func (e *Emulator) Run() (err error) {
 				shamt := inst.imm & 0b11111
 				if funct7 == 0x0 {
 					// SRLIW
-					e.SetReg(inst.rd, rs1>>shamt)
+					e.SetReg(inst.rd, uint64(int64(int32(rs1>>shamt))))
 				} else if funct7 == 0x16 {
 					// SRAIW
-					e.SetReg(inst.rd, uint64(int64(rs1)>>shamt))
+					e.SetReg(inst.rd, uint64(int64(int32(rs1)>>shamt)))
 				} else {
 					panic("unreachable srai")
 				}
 			}
-			e.IncRegPc()
+		case 0b0111011:
+			// Rtype
+			// register arithmetic
+			inst := Decode(inst, Rtype{}).(Rtype)
+			rs1 := uint32(e.Reg(inst.rs1))
+			rs2 := uint32(e.Reg(inst.rs2))
+
+			switch inst.funct3 | inst.funct7 {
+			case 0x0:
+				// ADDW
+				e.SetReg(inst.rd, uint64(int64(int32(rs1+rs2))))
+			case 0x20:
+				// SUBW
+				e.SetReg(inst.rd, uint64(int64(int32(rs1-rs2))))
+			case 0x1:
+				// SLLW
+				shamt := rs2 & 0b11111
+				e.SetReg(inst.rd, uint64(int64(int32(rs1<<shamt))))
+			case 0x5:
+				// SRLW
+				shamt := rs2 & 0b11111
+				e.SetReg(inst.rd, uint64(int64(int32(rs1>>shamt))))
+			case 0x5 | 0x20:
+				// SRAW
+				shamt := rs2 & 0b11111
+				e.SetReg(inst.rd, uint64(int64(int32(rs1)>>shamt)))
+			}
 		case 0b0001111:
 			// FENCE
 			return fmt.Errorf("fence\n")
@@ -464,6 +483,9 @@ func (e *Emulator) Run() (err error) {
 		default:
 			return fmt.Errorf("unhandled opcode: %#b", opcode)
 		}
+
+		npc := e.Reg(Pc)
+		e.SetReg(Pc, npc+4)
 		continue
 	}
 	return nil

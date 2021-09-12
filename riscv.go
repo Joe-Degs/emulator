@@ -18,6 +18,7 @@ const (
 	T2
 	S0 // also FP
 	S1
+	A0
 	A1
 	A2
 	A3
@@ -43,7 +44,7 @@ const (
 )
 
 func GetReg(reg uint32) Register {
-	if reg > 31 {
+	if reg > 32 {
 		return Zero
 	}
 	return Register(uint8(reg))

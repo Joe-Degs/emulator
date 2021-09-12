@@ -13,9 +13,9 @@ type Perm uint8
 // track of modified memory locations.
 const (
 	PERM_READ  Perm = 1 << 0 // read permission
-	PERM_WRITE      = 1 << 1 // write permission
-	PERM_EXEC       = 1 << 2 // executable permission
-	PERM_RAW        = 1 << 3 // read-after-write permission
+	PERM_WRITE Perm = 1 << 1 // write permission
+	PERM_EXEC  Perm = 1 << 2 // executable permission
+	PERM_RAW   Perm = 1 << 3 // read-after-write permission
 
 	DIRTY_BLOCK_SIZE = 0x7f
 )
@@ -54,7 +54,7 @@ func NewMmu(size uint) *Mmu {
 		memory:       make([]uint8, size),
 		permissions:  make([]Perm, size),
 		dirty:        make(Block),
-		curAlloc:     VirtAddr(0x800),
+		curAlloc:     VirtAddr(0x10000),
 		programStart: 0,
 	}
 }
@@ -256,59 +256,60 @@ func (m Mmu) ReadInto8(addr VirtAddr, perm Perm) (inst uint8, err error) {
 
 // Read from readable memory into a val, val must be a pointer to an integer type
 func (m Mmu) ReadIntoVal(addr VirtAddr, val interface{}) (err error) {
+	perm := PERM_EXEC
 	switch p := val.(type) {
 	case *uint8:
 		buf := make([]byte, 1)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*uint8)(unsafe.Pointer(&buf[0]))
 		}
 		return
 	case *uint16:
 		buf := make([]byte, 2)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*uint16)(unsafe.Pointer(&buf[0]))
 		}
 		return
 	case *uint32:
 		buf := make([]byte, 4)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*uint32)(unsafe.Pointer(&buf[0]))
 		}
 		return
 	case *uint64:
 		buf := make([]byte, 8)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*uint64)(unsafe.Pointer(&buf[0]))
 		}
 		return
 	case *int8:
 		buf := make([]byte, 1)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*int8)(unsafe.Pointer(&buf[0]))
 		}
 		return
 	case *int16:
 		buf := make([]byte, 2)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*int16)(unsafe.Pointer(&buf[0]))
 		}
 		return
 	case *int32:
 		buf := make([]byte, 32)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*int32)(unsafe.Pointer(&buf[0]))
 		}
 		return
 	case *int64:
 		buf := make([]byte, 8)
-		err = m.ReadIntoPerms(addr, buf, PERM_READ)
+		err = m.ReadIntoPerms(addr, buf, perm)
 		if err == nil {
 			*p = *(*int64)(unsafe.Pointer(&buf[0]))
 		}
