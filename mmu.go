@@ -6,6 +6,8 @@ import (
 	"unsafe"
 )
 
+//go:generate stringer -type=Perm
+
 // Perm represent permissions of memory addresses
 type Perm uint8
 

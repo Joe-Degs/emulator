@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/elf"
 	"fmt"
 	"os"
 	"unsafe"
@@ -14,13 +15,19 @@ type Emulator struct {
 	registers [33]uint64
 }
 
-// Section represents elf binary section
+// Section represents elf binary loadable program segments
 type Section struct {
 	fileOffset  uint
 	memSize     uint
 	fileSize    uint
 	virtualAddr VirtAddr
 	permissions Perm
+}
+
+// FileHeader holds elf file header information
+type FileHeader struct {
+	filename string
+	entry    uint64
 }
 
 func NewEmulator(size uint) *Emulator {
@@ -48,8 +55,8 @@ func max(a, b uint) uint {
 }
 
 // Load executable binary into the emulator's address space
-func (e *Emulator) Load(path string, sections []Section) error {
-	fileContents, err := os.ReadFile(path)
+func (e *Emulator) LoadSections(hdr FileHeader, sections []Section) error {
+	fileContents, err := os.ReadFile(hdr.filename)
 	if err != nil {
 		return err
 	}
@@ -77,6 +84,66 @@ func (e *Emulator) Load(path string, sections []Section) error {
 			(uint(section.virtualAddr)+section.memSize+0xf)&^0xf),
 		)
 	}
+
+	// set the entry point of the program in memory
+	e.SetProgramStart(hdr.entry)
+	return nil
+}
+
+func (e *Emulator) LoadFile(path string) error {
+	elfBinary, err := elf.Open(path)
+	if err != nil {
+		return err
+	}
+
+	// parse the file header containing the path to the program to run and
+	// the entry point of the program
+	fileHdr := FileHeader{
+		filename: path,
+		entry:    elfBinary.FileHeader.Entry,
+	}
+
+	loadableSecs := make([]Section, 0, len(elfBinary.Progs))
+	fmt.Println(loadableSecs)
+
+	for _, hdr := range elfBinary.Progs {
+		// Get all the loadable sections of the program header
+		if hdr.ProgHeader.Type == elf.PT_LOAD {
+			// get program header
+			ph := hdr.ProgHeader
+
+			// parse the needed sections
+			sec := Section{
+				fileOffset:  uint(ph.Off),
+				memSize:     uint(ph.Memsz),
+				fileSize:    uint(ph.Filesz),
+				virtualAddr: VirtAddr(ph.Vaddr),
+			}
+
+			// parsing program header permissions
+			if ph.Flags&elf.PF_R == elf.PF_R {
+				// add readable perms to section
+				sec.permissions |= PERM_READ
+			}
+
+			if ph.Flags&elf.PF_W == elf.PF_W {
+				// add writable perms to section
+				sec.permissions |= PERM_WRITE
+			}
+
+			if ph.Flags&elf.PF_X == elf.PF_X {
+				// add executable perms to section
+				sec.permissions |= PERM_EXEC
+			}
+
+			// append to sections
+			loadableSecs = append(loadableSecs, sec)
+		}
+	}
+
+	// still need the entry point and the stack and all othe other stuff too
+
+	e.LoadSections(fileHdr, loadableSecs)
 	return nil
 }
 
