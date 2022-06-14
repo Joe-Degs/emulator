@@ -2,11 +2,8 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"unsafe"
 )
-
-//go:generate stringer -type=Perm
 
 // Perm represent permissions of memory addresses
 type Perm uint8
@@ -23,10 +20,10 @@ const (
 )
 
 var (
-	ErrMemIONotPermitted = errors.New("mmu: you don't have perms to access memory")
+	ErrMemIONotPermitted = errors.New("mmu: memory inaccessible")
 )
 
-// VirtAddr is a guest virtual address and an io.ReadWriter
+// VirtAddr is a guest virtual address
 type VirtAddr uint
 
 // Block is a block of memory, it maps the start of the block to the end
@@ -194,130 +191,39 @@ func (m Mmu) ReadInto(addr VirtAddr, buf []uint8) error {
 	return m.ReadIntoPerms(addr, buf, PERM_READ)
 }
 
-// WriteFromVal provides a generic interface for writing values into memory
-func (m *Mmu) WriteFromVal(addr VirtAddr, val interface{}) error {
-	switch p := val.(type) {
-	case uint8:
-		buf := *(*[1]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	case int8:
-		buf := *(*[1]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	case uint16:
-		buf := *(*[2]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	case int16:
-		buf := *(*[2]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	case uint32:
-		buf := *(*[4]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	case int32:
-		buf := *(*[4]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	case uint64:
-		buf := *(*[8]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	case int64:
-		buf := *(*[8]byte)(unsafe.Pointer(&p))
-		return m.WriteFrom(addr, buf[:])
-	default:
-		return fmt.Errorf("mmu: value type '%T' not supported\n", val)
-	}
+// Go generics are stable now, i've been waiting for it to become
+// stable for sometime, its here so we change functions to use it
+//
+// Primitive is a generic type consisting of all integer types in go
+type Primitive interface {
+	uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64
 }
 
-// Read 4-bytes of memory starting at `addr` with permissions `perm`
-func (m Mmu) ReadInto32(addr VirtAddr, perm Perm) (inst uint32, err error) {
-	buf := make([]byte, 4)
-	err = m.ReadIntoPerms(addr, buf, perm)
-	if err == nil {
-		inst = *(*uint32)(unsafe.Pointer(&buf[0]))
+// WriteFromVal allows you to any value in a primitive integer type into
+// virtual memory
+func WriteFromVal[T Primitive](m *Mmu, addr VirtAddr, val T) error {
+	size := unsafe.Sizeof(val)
+	buf := make([]byte, size)
+	for i := uintptr(0); i < size; i++ {
+		b := *(*uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&val)) + i))
+		buf[i] = b
 	}
-	return
+	return m.WriteFrom(addr, buf)
 }
 
-// Read 2-bytes of memory at addr
-func (m Mmu) ReadInto16(addr VirtAddr, perm Perm) (inst uint16, err error) {
-	buf := make([]byte, 2)
-	err = m.ReadIntoPerms(addr, buf, perm)
-	if err == nil {
-		inst = *(*uint16)(unsafe.Pointer(&buf[0]))
+// ReadIntoVal reads sizeof(T) from `addr` and returns the result as
+// a primitive integer type Primitive checking the permissions before reading.
+func ReadIntoValPerms[T Primitive](m *Mmu, addr VirtAddr, val T, perm Perm) (T, error) {
+	buf := make([]byte, unsafe.Sizeof(val))
+	err := m.ReadIntoPerms(addr, buf, perm)
+	if err != nil {
+		return 0, err
 	}
-	return
+	return *(*T)(unsafe.Pointer(&buf[0])), nil
 }
 
-// Read 1-byte of memory at addr
-func (m Mmu) ReadInto8(addr VirtAddr, perm Perm) (inst uint8, err error) {
-	buf := make([]byte, 1)
-	err = m.ReadIntoPerms(addr, buf, perm)
-	if err == nil {
-		inst = *(*uint8)(unsafe.Pointer(&buf[0]))
-	}
-	return
-}
-
-// Read from readable memory into a val, val must be a pointer to an integer type
-func (m Mmu) ReadIntoVal(addr VirtAddr, val interface{}) (err error) {
-	perm := PERM_EXEC
-	switch p := val.(type) {
-	case *uint8:
-		buf := make([]byte, 1)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*uint8)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	case *uint16:
-		buf := make([]byte, 2)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*uint16)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	case *uint32:
-		buf := make([]byte, 4)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*uint32)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	case *uint64:
-		buf := make([]byte, 8)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*uint64)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	case *int8:
-		buf := make([]byte, 1)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*int8)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	case *int16:
-		buf := make([]byte, 2)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*int16)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	case *int32:
-		buf := make([]byte, 32)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*int32)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	case *int64:
-		buf := make([]byte, 8)
-		err = m.ReadIntoPerms(addr, buf, perm)
-		if err == nil {
-			*p = *(*int64)(unsafe.Pointer(&buf[0]))
-		}
-		return
-	default:
-		return fmt.Errorf("mmu: val '%T' not supported", p)
-	}
-	return
+// ReadIntoVal reads sizeof(T) from `addr` and returns the result as
+// a primitive integer type Primitive
+func ReadIntoVal[T Primitive](m *Mmu, addr VirtAddr, val T) (T, error) {
+	return ReadIntoValPerms(m, addr, val, PERM_READ)
 }

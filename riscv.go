@@ -1,8 +1,6 @@
 // This file contains implementation of the risc-v instruction set
 package main
 
-//go:generate stringer -type=Register
-
 // Register represents a single riscv register file
 type Register uint8
 

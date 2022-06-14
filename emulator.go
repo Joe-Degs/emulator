@@ -306,48 +306,42 @@ func (e *Emulator) Run() (err error) {
 			switch inst.funct3 {
 			case 0x0:
 				// LB
-				var val int8
-				err = e.ReadIntoVal(addr, &val)
+				val, err := ReadIntoVal(e.Mmu, addr, int8(0))
 				if err != nil {
 					return err
 				}
 				e.SetReg(inst.rd, uint64(int64(val)))
 			case 0x1:
 				// LH
-				var val int16
-				err = e.ReadIntoVal(addr, &val)
+				val, err := ReadIntoVal(e.Mmu, addr, int16(0))
 				if err != nil {
 					return err
 				}
 				e.SetReg(inst.rd, uint64(int64(val)))
 			case 0x2:
 				// LW
-				var val int32
-				err = e.ReadIntoVal(addr, &val)
+				val, err := ReadIntoVal(e.Mmu, addr, int32(0))
 				if err != nil {
 					return err
 				}
 				e.SetReg(inst.rd, uint64(int64(val)))
 			case 0x3:
 				// LD
-				var val int64
-				err = e.ReadIntoVal(addr, &val)
+				val, err := ReadIntoVal(e.Mmu, addr, int64(0))
 				if err != nil {
 					return err
 				}
 				e.SetReg(inst.rd, uint64(int64(val)))
 			case 0x4:
 				// LBU
-				var val uint8
-				err = e.ReadIntoVal(addr, &val)
+				val, err := ReadIntoVal(e.Mmu, addr, uint8(0))
 				if err != nil {
 					return err
 				}
 				e.SetReg(inst.rd, uint64(int64(val)))
 			case 0x5:
 				// LHU
-				var val uint16
-				err = e.ReadIntoVal(addr, &val)
+				val, err := ReadIntoVal(e.Mmu, addr, uint16(0))
 				if err != nil {
 					return err
 				}
@@ -355,7 +349,7 @@ func (e *Emulator) Run() (err error) {
 			case 0x6:
 				// LWU
 				var val uint32
-				err = e.ReadIntoVal(addr, &val)
+				val, err := ReadIntoVal(e.Mmu, addr, uint32(0))
 				if err != nil {
 					return err
 				}
@@ -366,24 +360,24 @@ func (e *Emulator) Run() (err error) {
 			// stores
 			inst := Decode(inst, Stype{}).(Stype)
 			addr := VirtAddr(e.Reg(inst.rs1) + uint64(int64(inst.imm)))
-			val := int64(e.Reg(inst.rs2))
+			val := int(e.Reg(inst.rs2))
 
 			switch inst.funct3 {
 			case 0x0:
 				// SB
-				err = e.WriteFromVal(addr, int8(val))
+				err = WriteFromVal(e.Mmu, addr, int8(val))
 				if err != nil {
 					return err
 				}
 			case 0x1:
 				// SH
-				err = e.WriteFromVal(addr, int16(val))
+				err = WriteFromVal(e.Mmu, addr, int16(val))
 				if err != nil {
 					return err
 				}
 			case 0x2:
 				// SW
-				err = e.WriteFromVal(addr, int32(val))
+				err = WriteFromVal(e.Mmu, addr, int32(val))
 				if err != nil {
 					return err
 				}
@@ -391,7 +385,7 @@ func (e *Emulator) Run() (err error) {
 				// SD
 				fmt.Printf("addr: %x %x\n", addr, val)
 				spew.Dump(inst)
-				err = e.WriteFromVal(addr, int64(val))
+				err = WriteFromVal(e.Mmu, addr, int64(val))
 				if err != nil {
 					return err
 				}
