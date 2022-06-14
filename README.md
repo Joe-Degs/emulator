@@ -9,3 +9,5 @@ He does things you are scared to do and encourages you to do it because the only
 
 __I have very little knowledge in systems programming and programming in general
 and I learn by following along streams and youtube tutorials__
+
+#### [Resources](https://github.com/Joe-Degs/riscv/tree/master/projects#resources)
