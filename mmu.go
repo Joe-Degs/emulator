@@ -199,16 +199,24 @@ type Primitive interface {
 	uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64
 }
 
+// ValToBytes converts a primitive interger type to sizeof(val) byte slice
+func ValToBytes[T Primitive](val T) []byte {
+	size := unsafe.Sizeof(val)
+	if size == 1 {
+		return (*[1]byte)(unsafe.Pointer(&val))[:]
+	}
+
+	buf := make([]byte, size)
+	for i := uintptr(0); i < size; i++ {
+		buf[i] = *(*uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&val)) + i))
+	}
+	return buf
+}
+
 // WriteFromVal allows you to any value in a primitive integer type into
 // virtual memory
 func WriteFromVal[T Primitive](m *Mmu, addr VirtAddr, val T) error {
-	size := unsafe.Sizeof(val)
-	buf := make([]byte, size)
-	for i := uintptr(0); i < size; i++ {
-		b := *(*uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&val)) + i))
-		buf[i] = b
-	}
-	return m.WriteFrom(addr, buf)
+	return m.WriteFrom(addr, ValToBytes(val))
 }
 
 // ReadIntoVal reads sizeof(T) from `addr` and returns the result as
