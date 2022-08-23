@@ -1,8 +1,10 @@
 package main
 
 import (
-	"errors"
+	"fmt"
 	"unsafe"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 // Perm represent permissions of memory addresses
@@ -11,17 +13,32 @@ type Perm uint8
 // Enum of permission variants supported an another variant for keeping
 // track of modified memory locations.
 const (
-	PERM_READ  Perm = 1 << 0 // read permission
-	PERM_WRITE Perm = 1 << 1 // write permission
-	PERM_EXEC  Perm = 1 << 2 // executable permission
-	PERM_RAW   Perm = 1 << 3 // read-after-write permission
+	PERM_EXEC  Perm = 0x1 // executable permission
+	PERM_WRITE Perm = 0x2 // write permission
+	PERM_READ  Perm = 0x4 // read permission
+	PERM_RAW   Perm = 0x5 // read-after-write permission
 
 	DIRTY_BLOCK_SIZE = 0x7f
 )
 
-var (
-	ErrMemIONotPermitted = errors.New("mmu: memory inaccessible")
+type MemErrType uint8
+
+const (
+	ErrCopy  MemErrType = iota // mem copy error
+	ErrPerms                   // mem permission error
 )
+
+type MMUError struct {
+	typ  MemErrType
+	addr VirtAddr
+	size uint
+	perm Perm
+}
+
+func (m MMUError) Error() string {
+	return fmt.Sprintf("MMUError{typ: %s, addr: %#v, size: %d, perm: %s}",
+		m.typ, m.addr, m.size, m.perm)
+}
 
 // VirtAddr is a guest virtual address
 type VirtAddr uint
@@ -32,7 +49,7 @@ type Block = map[VirtAddr]VirtAddr
 
 // Mmu is an isolated memory space
 type Mmu struct {
-	// memory is blob of memory space available to the system
+	// memory is blob of memory space available to the emulator
 	memory []uint8
 
 	// access restrictions on individual locations in memory
@@ -44,8 +61,24 @@ type Mmu struct {
 	// tracks the current allocation
 	curAlloc VirtAddr
 
+	// the stack pointer
+	stack VirtAddr
+
+	// the start of the heap memory
+	heap VirtAddr
+
 	// keep track of the program start in memory
 	programStart VirtAddr
+}
+
+func (m *Mmu) SetHeap(addr VirtAddr) {
+	m.heap = addr
+}
+
+func (m Mmu) Heap() VirtAddr { return m.heap }
+
+func (m *Mmu) SetStack(addr VirtAddr) {
+	m.stack = addr
 }
 
 func NewMmu(size uint) *Mmu {
@@ -53,7 +86,7 @@ func NewMmu(size uint) *Mmu {
 		memory:       make([]uint8, size),
 		permissions:  make([]Perm, size),
 		dirty:        make(Block),
-		curAlloc:     VirtAddr(0x10000),
+		curAlloc:     VirtAddr(0x100),
 		programStart: 0,
 	}
 }
@@ -109,7 +142,7 @@ func (m *Mmu) Allocate(size uint) VirtAddr {
 	}
 
 	// mark memory as uninitialized and writable
-	m.SetPermissions(base, size, PERM_RAW|PERM_WRITE)
+	m.SetPermissions(base, size, PERM_READ|PERM_WRITE)
 
 	return base
 }
@@ -131,12 +164,15 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) error {
 
 	hasRAW := false
 	for _, p := range perms {
-		// check if any part of the memory has is read-after-write
+		// check if any part of the memory has read-after-write
 		hasRAW = hasRAW || ((p & PERM_RAW) != 0)
 
 		// check if all perms are set to write
 		if (p & PERM_WRITE) == 0 {
-			return ErrMemIONotPermitted
+			size := uint(len(buf))
+			// m.Inspect(addr, size)
+			// m.InspectPerms(addr, size)
+			return MMUError{typ: ErrPerms, addr: addr, size: size}
 		}
 	}
 
@@ -168,6 +204,14 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) error {
 	return nil
 }
 
+func (m Mmu) copyBytes(addr VirtAddr, buf []uint8) error {
+	// copy from the address pointed to by `addr` to len(buf) into `buf`
+	if copy(buf, m.memory[int(addr):len(buf)+int(addr)]) != len(buf) {
+		return MMUError{typ: ErrCopy, addr: addr, size: uint(len(buf))}
+	}
+	return nil
+}
+
 // ReadIntoPerms reads data of `len(buf)` from memory into buf only if the region
 // of memory been read has `perm` set on it
 func (m Mmu) ReadIntoPerms(addr VirtAddr, buf []uint8, perm Perm) error {
@@ -177,13 +221,20 @@ func (m Mmu) ReadIntoPerms(addr VirtAddr, buf []uint8, perm Perm) error {
 	for _, p := range perms {
 		// check if all perms on region of memory is expected perm
 		if (p & perm) != perm {
-			return ErrMemIONotPermitted
+			return MMUError{typ: ErrPerms, addr: addr, perm: perm}
 		}
 	}
+	return m.copyBytes(addr, buf)
+}
 
-	// copy from the address pointed to by `addr` to len(buf) into `buf`
-	copy(buf, m.memory[int(addr):len(buf)+int(addr)])
-	return nil
+func (m Mmu) Inspect(addr VirtAddr, size uint) {
+	alignSize := (size + 0xf) &^ 0xf
+	spew.Dump(m.memory[addr : uint(addr)+alignSize])
+}
+
+func (m Mmu) InspectPerms(addr VirtAddr, size uint) {
+	alignSize := (size + 0xf) &^ 0xf
+	spew.Dump(m.permissions[addr : uint(addr)+alignSize])
 }
 
 // ReadInto reads data of `len(buf)` from readable memory starting at addr into buf

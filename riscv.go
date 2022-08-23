@@ -170,7 +170,8 @@ func (Jtype) Decode(inst uint32) Instruction {
 	}
 }
 
-// this will switch between the type here and return
+// Decode converts the binary instruction into its struct type
 func Decode(inst uint32, instruction Instruction) Instruction {
-	return instruction.Decode(inst)
+	dec := instruction.Decode(inst)
+	return dec
 }

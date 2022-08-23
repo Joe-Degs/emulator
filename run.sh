@@ -1,3 +1,2 @@
 #!/usr/bin/env bash
-go run . > out 2>&1
-vim out
+go run . ./testdata/hello/hello >&2 out && cat out

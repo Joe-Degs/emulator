@@ -9,8 +9,15 @@ hello: hello.o
 		$(COMPILER_RT_PATH) \
 		*.o
 
+
 hello.o: hello.S
 	clang-$(CLANG_VERSION) $(CFLAGS) -c hello.S
+
+llvm:
+	llvm-objdump-11 -D -j .text hello | vim -
+
+gcc:
+	riscv64-linux-gnu-objdump -D -j .text hello | vim -
 
 clean:
 	rm -f hello *.o

@@ -1,59 +1,80 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"unsafe"
 )
 
 var wg sync.WaitGroup
 
-//go:generate stringer -type=Register,Perm -output=string.go
+//go:generate stringer -type=Register,Perm,MemErrType -output=string.go
 
 func main() {
-	emu := NewEmulator(32 * 1024 * 1024)
-
-	// map the elf binary into memory and set `pc` to the programs
-	// entry point
-	err := emu.LoadFile("./testdata/tcat/tcat")
-
-	if err != nil {
+	if len(os.Args) < 2 {
+		log.Fatal("Usage: relator <path/to/binary>")
+	}
+	var (
+		path string
+		err  error
+	)
+	if path, err = filepath.Abs(os.Args[1]); err != nil {
 		log.Fatal(err)
 	}
+	_, binary := filepath.Split(path)
+	fmt.Printf("BinaryPath: %s\nFilename: %s\n", path, binary)
 
-	stack := emu.Allocate(32 * 1024)
-	emu.SetReg(Sp, uint64(stack)+32*1024)
+	// create a new emulator
+	emu := NewEmulator(1024 * 1024 * 32)
+
+	// map the elf binary into memory and set `pc` to the programs entry point
+	if err := emu.LoadFile(path); err != nil {
+		panic(err)
+	}
+	fmt.Printf("CurAlloc After Load: %#x\n", emu.Mmu.curAlloc)
+
+	// allocate stack and set the sp to the end of the memory. this is because
+	// by convention the stack grows from from the higher memory to lower memory
+	stack := emu.Allocate(64 * 1024)
+	stackEnd := stack + 64*1024
+	emu.SetHeap(stack) // set heap to end of stack
+	emu.SetReg(Sp, uint64(stackEnd))
+
+	fmt.Printf("STACK: begin: %#x, end: %#x\n", stackEnd, stack)
 
 	// set up null terminated string arg values.
-	argv := emu.Allocate(8)
-	err = emu.WriteFrom(argv, nullTerminate("tcat"))
-	if err != nil {
+	argv := emu.Allocate(uint(len(path) + 1))
+	if err := emu.WriteFrom(argv, nullTerminate(binary)); err != nil {
 		panic(err)
 	}
 
-	push(emu, uint64(0)) // auxp
-	push(emu, uint64(0)) // envp
-	push(emu, uint64(0)) // argv end
-	push(emu, uint64(argv))
-	push(emu, uint64(1)) // auxp
+	push(emu, uint64(0))    // auxp
+	push(emu, uint64(0))    // envp
+	push(emu, uint64(argv)) // argv
+	push(emu, int32(1))     // argc
 
-	err = emu.Run()
-	if err != nil {
+	// emu.Inspect(VirtAddr(emu.Reg(Sp)-0x100), 500)
+	// os.Exit(1)
+
+	if err := emu.Run(); err != nil {
 		panic(err)
 	}
 }
 
-// stack push routine
+// push is a routine for pushing values onto the stack
 func push[T Primitive](emu *Emulator, val T) {
 	size := unsafe.Sizeof(val)
 	sp := emu.Reg(Sp) - uint64(size)
-	err := WriteFromVal(emu.Mmu, VirtAddr(sp), val)
-	if err != nil {
+	if err := WriteFromVal(emu.Mmu, VirtAddr(sp), val); err != nil {
 		panic(err)
 	}
 	emu.SetReg(Sp, sp)
 }
 
+// null terminate strings before sticking them in memory
 func nullTerminate(str string) []byte {
 	return append([]byte(str), 0)
 }
