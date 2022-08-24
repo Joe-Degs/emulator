@@ -6,6 +6,7 @@ import "fmt"
 // function.
 var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
 	222: mmap,
+	64:  write,
 }
 
 // SysCall contains the syscall number and arguments. It also double as an
@@ -29,12 +30,6 @@ func (s SysCall) execute(e *Emulator) error {
 	return s
 }
 
-// mmap syscall number 222
-func mmap(e *Emulator, s SysCall) error {
-	e.SetReg(A0, uint64(e.Heap()))
-	return nil
-}
-
 // TrapIntoSystem prepares the system for syscall execution.
 func (e *Emulator) TrapIntoSystem() error {
 	syscall := SysCall{
@@ -42,4 +37,21 @@ func (e *Emulator) TrapIntoSystem() error {
 		e.Reg(A3), e.Reg(A4), e.Reg(A5), e.Reg(A6),
 	}
 	return syscall.execute(e)
+}
+
+// mmap syscall number 222
+func mmap(e *Emulator, s SysCall) error {
+	e.SetReg(A0, uint64(e.Heap()))
+	return nil
+}
+
+// ssize_t write(int fd, const void *buf, size_t count)
+func write(e *Emulator, s SysCall) error {
+	addr := VirtAddr(s.a1)
+	buf := make([]byte, s.a2)
+	if err := e.ReadIntoPerms(addr, buf, PERM_READ); err != nil {
+		return err
+	}
+	fmt.Print(string(buf))
+	return nil
 }

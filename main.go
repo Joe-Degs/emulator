@@ -59,6 +59,12 @@ func main() {
 	// os.Exit(1)
 
 	if err := emu.Run(); err != nil {
+		if eerr, ok := err.(EmuExit); ok {
+			if merr, ok := eerr.cause.(MMUError); ok {
+				emu.Inspect(merr.addr, merr.size+20)
+				emu.InspectPerms(merr.addr, merr.size+20)
+			}
+		}
 		panic(err)
 	}
 }
