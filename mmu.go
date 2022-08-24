@@ -1,3 +1,4 @@
+// memory mapping unit - contains logic to coordinate memory access and allocation
 package main
 
 import (
@@ -10,17 +11,18 @@ import (
 // Perm represent permissions of memory addresses
 type Perm uint8
 
-// Enum of permission variants supported an another variant for keeping
-// track of modified memory locations.
+// Enum of variants of permission types on memory locations, the values
+// correspond to the values of permissions of the elf file format.
 const (
 	PERM_EXEC  Perm = 0x1 // executable permission
 	PERM_WRITE Perm = 0x2 // write permission
 	PERM_READ  Perm = 0x4 // read permission
-	PERM_RAW   Perm = 0x5 // read-after-write permission
+	PERM_RAW   Perm = 0x3 // read-after-write permission
 
 	DIRTY_BLOCK_SIZE = 0x7f
 )
 
+// MemErrType represents the types of errors encountered during memory access
 type MemErrType uint8
 
 const (
@@ -28,6 +30,7 @@ const (
 	ErrPerms                   // mem permission error
 )
 
+// MMUError contains values that make it easier to trace memory access errors
 type MMUError struct {
 	typ  MemErrType
 	addr VirtAddr
@@ -169,10 +172,7 @@ func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) error {
 
 		// check if all perms are set to write
 		if (p & PERM_WRITE) == 0 {
-			size := uint(len(buf))
-			// m.Inspect(addr, size)
-			// m.InspectPerms(addr, size)
-			return MMUError{typ: ErrPerms, addr: addr, size: size}
+			return MMUError{typ: ErrPerms, addr: addr, size: uint(len(buf))}
 		}
 	}
 
@@ -221,7 +221,7 @@ func (m Mmu) ReadIntoPerms(addr VirtAddr, buf []uint8, perm Perm) error {
 	for _, p := range perms {
 		// check if all perms on region of memory is expected perm
 		if (p & perm) != perm {
-			return MMUError{typ: ErrPerms, addr: addr, perm: perm}
+			return MMUError{typ: ErrPerms, addr: addr, size: uint(len(buf)), perm: perm}
 		}
 	}
 	return m.copyBytes(addr, buf)
@@ -274,8 +274,7 @@ func WriteFromVal[T Primitive](m *Mmu, addr VirtAddr, val T) error {
 // a primitive integer type Primitive checking the permissions before reading.
 func ReadIntoValPerms[T Primitive](m *Mmu, addr VirtAddr, val T, perm Perm) (T, error) {
 	buf := make([]byte, unsafe.Sizeof(val))
-	err := m.ReadIntoPerms(addr, buf, perm)
-	if err != nil {
+	if err := m.ReadIntoPerms(addr, buf, perm); err != nil {
 		return 0, err
 	}
 	return *(*T)(unsafe.Pointer(&buf[0])), nil

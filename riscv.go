@@ -1,4 +1,5 @@
-// This file contains implementation of the risc-v instruction set
+// RISC-V specific implementation logic - contains register enum and first step
+// in instruction decode process.
 package main
 
 // Register represents a single riscv register file

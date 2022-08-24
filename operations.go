@@ -1,3 +1,5 @@
+// RISC-V instruction operation logic - functions that perform the operation
+// of the instruction
 package main
 
 import (
@@ -88,6 +90,7 @@ func (e *Emulator) decodeItypeImmArith(ins uint32) {
 	inst := Decode(ins, Itype{}).(Itype)
 	rs1 := int64(e.Reg(inst.rs1))
 	imm := int64(inst.imm)
+
 	switch inst.funct3 {
 	case 0x0:
 		// ADDI
@@ -178,7 +181,7 @@ func (e *Emulator) decodeItype32bitArith(ins uint32) {
 // Itype perform load operations
 func (e *Emulator) decodeItypeLoads(ins uint32) error {
 	inst := Decode(ins, Itype{}).(Itype)
-	addr := VirtAddr(int64(e.Reg(inst.rs1)) + int64(inst.imm))
+	addr := VirtAddr(e.Reg(inst.rs1) + uint64(int64(inst.imm)))
 
 	switch inst.funct3 {
 	case 0x0:
@@ -204,25 +207,25 @@ func (e *Emulator) decodeItypeLoads(ins uint32) error {
 		e.SetReg(inst.rd, uint64(int64(val)))
 	case 0x3:
 		// LD
-		val, err := ReadIntoVal(e.Mmu, addr, int64(0))
+		val, err := ReadIntoVal(e.Mmu, addr, uint64(0))
 		if err != nil {
 			return err
 		}
-		e.SetReg(inst.rd, uint64(int64(val)))
+		e.SetReg(inst.rd, val)
 	case 0x4:
 		// LBU
 		val, err := ReadIntoVal(e.Mmu, addr, uint8(0))
 		if err != nil {
 			return err
 		}
-		e.SetReg(inst.rd, uint64(int64(val)))
+		e.SetReg(inst.rd, uint64(val))
 	case 0x5:
 		// LHU
 		val, err := ReadIntoVal(e.Mmu, addr, uint16(0))
 		if err != nil {
 			return err
 		}
-		e.SetReg(inst.rd, uint64(int64(val)))
+		e.SetReg(inst.rd, uint64(val))
 	case 0x6:
 		// LWU
 		var val uint32
@@ -230,7 +233,7 @@ func (e *Emulator) decodeItypeLoads(ins uint32) error {
 		if err != nil {
 			return err
 		}
-		e.SetReg(inst.rd, uint64(int64(val)))
+		e.SetReg(inst.rd, uint64(val))
 	}
 	return nil
 }
@@ -238,31 +241,31 @@ func (e *Emulator) decodeItypeLoads(ins uint32) error {
 // Stype perform store operations
 func (e *Emulator) decodeStypeStore(ins uint32) (err error) {
 	inst := Decode(ins, Stype{}).(Stype)
-	addr := VirtAddr(int64(e.Reg(inst.rs1)) + int64(inst.imm))
+	addr := VirtAddr(e.Reg(inst.rs1) + uint64(int64(inst.imm)))
 	val := e.Reg(inst.rs2)
 
 	switch inst.funct3 {
 	case 0x0:
 		// SB
-		err = WriteFromVal(e.Mmu, addr, int8(val))
+		err = WriteFromVal(e.Mmu, addr, uint8(val&0xff))
 		if err != nil {
 			return err
 		}
 	case 0x1:
 		// SH
-		err = WriteFromVal(e.Mmu, addr, int16(val))
+		err = WriteFromVal(e.Mmu, addr, uint16(val&0xffff))
 		if err != nil {
 			return err
 		}
 	case 0x2:
 		// SW
-		err = WriteFromVal(e.Mmu, addr, int32(val))
+		err = WriteFromVal(e.Mmu, addr, uint32(val&0xffffffff))
 		if err != nil {
 			return err
 		}
 	case 0x3:
 		// SD
-		err = WriteFromVal(e.Mmu, addr, int64(val))
+		err = WriteFromVal(e.Mmu, addr, val)
 		if err != nil {
 			return err
 		}

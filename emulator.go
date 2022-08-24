@@ -1,3 +1,5 @@
+// emulator logic - loads and maps files into memory and starts the
+// fetch-decode-execute loop
 package main
 
 import (
@@ -130,13 +132,11 @@ func (e Emulator) NextInstAndOpcode() (inst uint32, opcode uint8, err error) {
 func (e *Emulator) Run() (err error) {
 	for {
 		inst, opcode, err := e.NextInstAndOpcode()
-		pc := e.Reg(Pc)
-
-		fmt.Printf("opcode: %#b \t pc: %#x\n", inst&0b1111111, pc)
-
 		if err != nil {
 			return err
 		}
+		pc := e.Reg(Pc)
+		// fmt.Printf("opcode: %#b \t pc: %#x\n", inst&0b1111111, pc)
 
 		switch opcode {
 		case 0b0110011:
@@ -162,70 +162,69 @@ func (e *Emulator) Run() (err error) {
 			// Utype
 			// AUIPC
 			inst := Decode(inst, Utype{}).(Utype)
-			e.SetReg(inst.rd, uint64(int64(inst.imm<<12)+int64(pc)))
+			e.SetReg(inst.rd, uint64(int64(inst.imm<<12))+pc)
 		case 0b1101111:
 			// Jtype
 			// JAL
 			inst := Decode(inst, Jtype{}).(Jtype)
 			e.SetReg(inst.rd, pc+4)
-			e.SetReg(Pc, uint64(int64(inst.imm)+int64(pc)))
+			e.SetReg(Pc, uint64(int64(inst.imm))+pc)
 			continue
 		case 0b1100111:
 			// Itype
 			// JALR
 			inst := Decode(inst, Itype{}).(Itype)
-			target := int64(e.Reg(inst.rs1)) + int64(inst.imm)
+			target := e.Reg(inst.rs1) + uint64(int64(inst.imm&^1))
 			e.SetReg(inst.rd, pc+4)
-			e.SetReg(Pc, uint64(target))
+			e.SetReg(Pc, target)
 			continue
 		case 0b1100011:
 			// Btype
 			// conditional branches
 			inst := Decode(inst, Btype{}).(Btype)
-			rs1 := int64(e.Reg(inst.rs1))
-			rs2 := int64(e.Reg(inst.rs2))
-			ipc := int64(pc)
+			rs1 := e.Reg(inst.rs1)
+			rs2 := e.Reg(inst.rs2)
 
 			switch inst.funct3 {
 			case 0x0:
 				// BEQ
 				if rs1 == rs2 {
-					simm := uint64(int64(inst.imm) + ipc)
+					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, simm)
 					continue
 				}
 			case 0x1:
 				// BNE
 				if rs1 != rs2 {
-					simm := uint64(int64(inst.imm) + ipc)
+					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, simm)
 					continue
 				}
 			case 0x2:
 				// BLT
 				if rs1 < rs2 {
-					simm := uint64(int64(inst.imm) + ipc)
+					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, simm)
 					continue
 				}
 			case 0x4:
 				// BGE
 				if rs1 >= rs2 {
-					simm := uint64(int64(inst.imm) + ipc)
+					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, simm)
 					continue
 				}
 			case 0x6:
 				// BLTU
-				if uint64(rs1) < uint64(rs2) {
-					simm := ipc + int64(inst.imm)
+				if rs1 < rs2 {
+					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, uint64(simm))
 					continue
 				}
 			case 0x7:
 				// BGEU
-				if uint64(rs1) >= uint64(rs2) {
-					simm := ipc + int64(inst.imm)
+				if rs1 >= rs2 {
+					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, uint64(simm))
 					continue
 				}

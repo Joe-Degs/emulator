@@ -5,17 +5,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sync"
 	"unsafe"
 )
 
-var wg sync.WaitGroup
+// var wg sync.WaitGroup
 
 //go:generate stringer -type=Register,Perm,MemErrType -output=string.go
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("Usage: relator <path/to/binary>")
+		log.Fatal("Usage: simpmulator <path/to/binary>")
 	}
 	var (
 		path string
@@ -25,7 +24,7 @@ func main() {
 		log.Fatal(err)
 	}
 	_, binary := filepath.Split(path)
-	fmt.Printf("BinaryPath: %s\nFilename: %s\n", path, binary)
+	fmt.Printf("PATH: %s\nFILENAME: %s\n", path, binary)
 
 	// create a new emulator
 	emu := NewEmulator(1024 * 1024 * 32)
@@ -34,7 +33,7 @@ func main() {
 	if err := emu.LoadFile(path); err != nil {
 		panic(err)
 	}
-	fmt.Printf("CurAlloc After Load: %#x\n", emu.Mmu.curAlloc)
+	fmt.Printf("CURRENT ALLOCATION: %#x\n", emu.Mmu.curAlloc)
 
 	// allocate stack and set the sp to the end of the memory. this is because
 	// by convention the stack grows from from the higher memory to lower memory
@@ -43,7 +42,7 @@ func main() {
 	emu.SetHeap(stack) // set heap to end of stack
 	emu.SetReg(Sp, uint64(stackEnd))
 
-	fmt.Printf("STACK: begin: %#x, end: %#x\n", stackEnd, stack)
+	fmt.Printf("STACK [%#x -> %#x]\n", stackEnd, stack)
 
 	// set up null terminated string arg values.
 	argv := emu.Allocate(uint(len(path) + 1))

@@ -60,30 +60,19 @@ func _() {
 	_ = x[PERM_EXEC-1]
 	_ = x[PERM_WRITE-2]
 	_ = x[PERM_READ-4]
-	_ = x[PERM_RAW-5]
+	_ = x[PERM_RAW-3]
 }
 
-const (
-	_Perm_name_0 = "PERM_EXECPERM_WRITE"
-	_Perm_name_1 = "PERM_READPERM_RAW"
-)
+const _Perm_name = "PERM_EXECPERM_WRITEPERM_RAWPERM_READ"
 
-var (
-	_Perm_index_0 = [...]uint8{0, 9, 19}
-	_Perm_index_1 = [...]uint8{0, 9, 17}
-)
+var _Perm_index = [...]uint8{0, 9, 19, 27, 36}
 
 func (i Perm) String() string {
-	switch {
-	case 1 <= i && i <= 2:
-		i -= 1
-		return _Perm_name_0[_Perm_index_0[i]:_Perm_index_0[i+1]]
-	case 4 <= i && i <= 5:
-		i -= 4
-		return _Perm_name_1[_Perm_index_1[i]:_Perm_index_1[i+1]]
-	default:
-		return "Perm(" + strconv.FormatInt(int64(i), 10) + ")"
+	i -= 1
+	if i >= Perm(len(_Perm_index)-1) {
+		return "Perm(" + strconv.FormatInt(int64(i+1), 10) + ")"
 	}
+	return _Perm_name[_Perm_index[i]:_Perm_index[i+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
