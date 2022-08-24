@@ -128,6 +128,19 @@ func (e Emulator) NextInstAndOpcode() (inst uint32, opcode uint8, err error) {
 	return
 }
 
+type EmuExit struct {
+    cause error
+    opcode uint8
+    pc uint64
+}
+
+func (e EmuExit) Error() string {
+    return fmt.Sprintf(
+        "EmuExit {\n\t%s,\n\tpc: %#x,\n\topcode: %#08b\n}\n",
+        e.cause.Error(), e.pc, e.opcode,
+    )
+}
+
 // Run is the fetch - decode - execute loop
 func (e *Emulator) Run() (err error) {
 	for {
@@ -136,7 +149,6 @@ func (e *Emulator) Run() (err error) {
 			return err
 		}
 		pc := e.Reg(Pc)
-		// fmt.Printf("opcode: %#b \t pc: %#x\n", inst&0b1111111, pc)
 
 		switch opcode {
 		case 0b0110011:
@@ -148,7 +160,7 @@ func (e *Emulator) Run() (err error) {
 		case 0b0000011:
 			// itype - memory loads
 			if err := e.decodeItypeLoads(inst); err != nil {
-				return err
+				return EmuExit{err, opcode, pc}
 			}
 		case 0b0100011:
 			// stype - memory stores
@@ -237,17 +249,17 @@ func (e *Emulator) Run() (err error) {
 			e.decodeRtype32RegArith(inst)
 		case 0b0001111:
 			// FENCE
-			return fmt.Errorf("fence\n")
+			return EmuExit{fmt.Errorf("fence\n"), opcode, pc}
 		case 0b1110011:
 			if inst == 0b00000000000000000000000001110011 {
 				// ECALL
 				if err := e.TrapIntoSystem(); err != nil {
-					return err
+					return EmuExit{err, opcode, pc}
 				}
 			} else if inst == 0b0000000000010000000000000001110011 {
 				// EBREAK
-				return fmt.Errorf("ebreak\n")
-			}
+				return EmuExit{fmt.Errorf("ebreak\n"), opcode, pc}
+            }
 		default:
 			return fmt.Errorf("unhandled opcode: %#b", opcode)
 		}

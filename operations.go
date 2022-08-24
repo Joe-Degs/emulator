@@ -270,5 +270,5 @@ func (e *Emulator) decodeStypeStore(ins uint32) (err error) {
 			return err
 		}
 	}
-	return
+	return nil
 }

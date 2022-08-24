@@ -16,7 +16,7 @@ type SysCall struct {
 
 func (s SysCall) Error() string {
 	return fmt.Sprintf(
-		"Syscall{num: %d, a0: %d, a1: %d, a2: %d, a3: %d, a4: %d, a5: %d, a6: %d}\n",
+		"Syscall{num: %d, a0: %d, a1: %d, a2: %d, a3: %d, a4: %d, a5: %d, a6: %d}",
 		s.num, s.a0, s.a1, s.a2, s.a3, s.a4, s.a5, s.a6,
 	)
 }
