@@ -10,7 +10,8 @@ it contains instructions on how to generate makefiles for compiling test apps to
 against the emulator.
 
 Any RV64I (base instruction set) toolchain should work too (i have not tried any
-myself)
+myself). But the compiled programs to run against the emulator must be
+statically linked and contain only the 64 bit base instruction set.
 
 The `testdata/` directory contains sample compiled binaries that can be used to
 test the emulator.

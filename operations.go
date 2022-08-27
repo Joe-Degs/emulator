@@ -114,12 +114,12 @@ func (e *Emulator) decodeItypeImmArith(ins uint32) {
 			panic("unreachable slli")
 		}
 	case 0x5:
-		funct7 := (inst.imm >> 5) & 0b111111
+		funct7 := (inst.imm >> 6) & 0b111111
 		shamt := inst.imm & 0b111111
 		if funct7 == 0x0 {
 			// SRLI
 			e.SetReg(inst.rd, uint64(rs1>>shamt))
-		} else if funct7 == 0x16 {
+		} else if funct7 == 0x10 {
 			// SRAI
 			e.SetReg(inst.rd, uint64(rs1>>shamt))
 		} else {

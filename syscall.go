@@ -7,6 +7,8 @@ import "fmt"
 var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
 	222: mmap,
 	64:  write,
+	94:  exit, // exit_group
+	93:  exit,
 }
 
 // SysCall contains the syscall number and arguments. It also double as an
@@ -52,6 +54,11 @@ func write(e *Emulator, s SysCall) error {
 	if err := e.ReadIntoPerms(addr, buf, PERM_READ); err != nil {
 		return err
 	}
-	fmt.Print(string(buf))
+	fmt.Printf("%s", buf)
 	return nil
+}
+
+// void _exit(int status);
+func exit(e *Emulator, s SysCall) error {
+	return Done{int(s.a0)}
 }

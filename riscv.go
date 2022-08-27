@@ -120,16 +120,16 @@ type Btype struct {
 }
 
 func (Btype) Decode(inst uint32) Instruction {
-	imm12 := (inst >> 31) & 0b1
+	imm12 := (inst >> 31) & 1
 	imm105 := (inst >> 25) & 0b111111
 	imm41 := (inst >> 8) & 0b1111
-	imm11 := (inst >> 7) & 0b1
-	// pieceing them all together
+	imm11 := (inst >> 7) & 1
+
 	imm := (imm12 << 12) | (imm11 << 11) | (imm105 << 5) | (imm41 << 1)
 	simm := (int32(imm) << 19) >> 19
 	return Btype{
-		rs1:    GetReg((inst >> 15) & 0b1111111),
-		rs2:    GetReg((inst >> 20) & 0b1111111),
+		rs1:    GetReg((inst >> 15) & 0b11111),
+		rs2:    GetReg((inst >> 20) & 0b11111),
 		funct3: (inst >> 12) & 0b111,
 		imm:    simm,
 	}
@@ -142,9 +142,11 @@ type Utype struct {
 }
 
 func (Utype) Decode(inst uint32) Instruction {
+	imm := (inst >> 12) & 0xfffff
+	//simm := (int32(imm) << 11) >> 11
 	return Utype{
 		rd:  GetReg((inst >> 7) & 0b11111),
-		imm: int32(uint32((inst >> 12) & 0b11111111111111111111)),
+		imm: int32(imm),
 	}
 }
 
@@ -155,9 +157,9 @@ type Jtype struct {
 }
 
 func (Jtype) Decode(inst uint32) Instruction {
-	imm20 := (inst >> 31) & 0b1
+	imm20 := (inst >> 31) & 1
 	imm101 := (inst >> 21) & 0b1111111111
-	imm11 := (inst >> 20) & 0b1
+	imm11 := (inst >> 20) & 1
 	imm1912 := (inst >> 12) & 0b11111111
 
 	// shift bits to their position
