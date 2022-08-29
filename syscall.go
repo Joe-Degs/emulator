@@ -12,13 +12,13 @@ var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
 // SysCall contains the syscall number and arguments. It also double as an
 // error for when the syscall is not implemented.
 type SysCall struct {
-	num, a0, a1, a2, a3, a4, a5, a6 uint64
+	num, a0, a1, a2, a3, a4, a5 uint64
 }
 
 func (s SysCall) Error() string {
 	return fmt.Sprintf(
-		"Syscall{num: %d, a0: %d, a1: %d, a2: %d, a3: %d, a4: %d, a5: %d, a6: %d}",
-		s.num, s.a0, s.a1, s.a2, s.a3, s.a4, s.a5, s.a6,
+		"Syscall{num: %d, a0: %d, a1: %d, a2: %d, a3: %d, a4: %d, a5: %d}",
+		s.num, s.a0, s.a1, s.a2, s.a3, s.a4, s.a5,
 	)
 }
 
@@ -34,7 +34,7 @@ func (s SysCall) execute(e *Emulator) error {
 func (e *Emulator) TrapIntoSystem() error {
 	syscall := SysCall{
 		e.Reg(A7), e.Reg(A0), e.Reg(A1), e.Reg(A2),
-		e.Reg(A3), e.Reg(A4), e.Reg(A5), e.Reg(A6),
+		e.Reg(A3), e.Reg(A4), e.Reg(A5),
 	}
 	return syscall.execute(e)
 }
