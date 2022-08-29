@@ -20,6 +20,9 @@ const (
 	PERM_RAW   Perm = 0x3 // read-after-write permission
 
 	DIRTY_BLOCK_SIZE = 0x7f
+
+	STACK_SIZE = 0x1000
+	HEAP_SIZE  = 0x1000
 )
 
 // MemErrType represents the types of errors encountered during memory access
@@ -43,11 +46,11 @@ func (m MMUError) Error() string {
 		m.typ, m.addr, m.size, m.perm)
 }
 
-// VirtAddr is a guest virtual address
+// VirtAddr is any point in the program's address space
 type VirtAddr uint
 
-// Block is a block of memory, it maps the start of the block to the end
-// of the block
+// Block is a block of memory, it maps the start of an allocated block to its
+// end
 type Block = map[VirtAddr]VirtAddr
 
 // Mmu is an isolated memory space
@@ -64,7 +67,7 @@ type Mmu struct {
 	// tracks the current allocation
 	curAlloc VirtAddr
 
-	// the stack pointer
+	// the start of the stack
 	stack VirtAddr
 
 	// the start of the heap memory
@@ -74,15 +77,16 @@ type Mmu struct {
 	programStart VirtAddr
 }
 
-func (m *Mmu) SetHeap(addr VirtAddr) {
-	m.heap = addr
-}
+// get the size of the memory
+func (m Mmu) Len() int { return len(m.memory) }
+
+func (m *Mmu) setHeap(addr VirtAddr) { m.heap = addr }
+
+func (m *Mmu) setStack(addr VirtAddr) { m.stack = addr }
 
 func (m Mmu) Heap() VirtAddr { return m.heap }
 
-func (m *Mmu) SetStack(addr VirtAddr) {
-	m.stack = addr
-}
+func (m Mmu) Stack() VirtAddr { return m.stack }
 
 func NewMmu(size uint) *Mmu {
 	return &Mmu{
@@ -121,39 +125,34 @@ func (m *Mmu) Fork() *Mmu {
 	return mmu
 }
 
-// Allocate allocates region of memory as RW in the address space
+// Allocate region of memory as RW
 func (m *Mmu) Allocate(size uint) VirtAddr {
+	return m.AllocatePerms(size, PERM_READ|PERM_WRITE)
+}
+
+// Allocate memory with specified permissions
+func (m *Mmu) AllocatePerms(size uint, perm Perm) VirtAddr {
 	// 16-byte align the allocation
 	alignSize := (size + 0xf) &^ 0xf
 
-	// get the base addr
 	base := m.curAlloc
-
-	// allocation is bigger than available memory
 	if int(base) >= len(m.memory) {
 		return 0
 	}
-
-	// update current allocation size
 	m.curAlloc += VirtAddr(alignSize)
 
 	// could not satisfy allocation without going out of memory
 	if int(m.curAlloc) > len(m.memory) {
-		// abort allocation and revert back to base
 		m.curAlloc = base
 		return 0
 	}
-
-	// mark memory as uninitialized and writable
-	m.SetPermissions(base, size, PERM_READ|PERM_WRITE)
-
+	m.SetPermissions(base, size, perm)
 	return base
 }
 
 // SetPermission sets the required permissions on memory locations starting
 // from the	`addr` to `addr+size`
 func (m *Mmu) SetPermissions(addr VirtAddr, size uint, perm Perm) {
-	// set permissions for the allocated memory
 	for i := uint(addr); i < uint(addr)+size; i++ {
 		m.permissions[i] = perm
 	}
@@ -162,7 +161,6 @@ func (m *Mmu) SetPermissions(addr VirtAddr, size uint, perm Perm) {
 // WriteFrom copies the buffer `buf` into memory checking the necessary
 // permission before doing so
 func (m *Mmu) WriteFrom(addr VirtAddr, buf []uint8) error {
-	//get the permission on the region of memory to write to
 	perms := m.permissions[int(addr) : len(buf)+int(addr)]
 
 	hasRAW := false
@@ -264,14 +262,13 @@ func ValToBytes[T Primitive](val T) []byte {
 	return buf
 }
 
-// WriteFromVal allows you to any value in a primitive integer type into
-// virtual memory
+// WriteFromVal writes a T to virtual memory at address `addr`
 func WriteFromVal[T Primitive](m *Mmu, addr VirtAddr, val T) error {
 	return m.WriteFrom(addr, ValToBytes(val))
 }
 
-// ReadIntoVal reads sizeof(T) from `addr` and returns the result as
-// a primitive integer type Primitive checking the permissions before reading.
+// ReadIntoVal reads a T from address `addr` from virtual memory, checking the
+// necessary permission before doing so.
 func ReadIntoValPerms[T Primitive](m *Mmu, addr VirtAddr, val T, perm Perm) (T, error) {
 	buf := make([]byte, unsafe.Sizeof(val))
 	if err := m.ReadIntoPerms(addr, buf, perm); err != nil {
@@ -280,8 +277,7 @@ func ReadIntoValPerms[T Primitive](m *Mmu, addr VirtAddr, val T, perm Perm) (T, 
 	return *(*T)(unsafe.Pointer(&buf[0])), nil
 }
 
-// ReadIntoVal reads sizeof(T) from `addr` and returns the result as
-// a primitive integer type Primitive
+// ReadIntoVal reads and returns a T from address `addr` in memory
 func ReadIntoVal[T Primitive](m *Mmu, addr VirtAddr, val T) (T, error) {
 	return ReadIntoValPerms(m, addr, val, PERM_READ)
 }

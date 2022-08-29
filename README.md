@@ -12,8 +12,9 @@ it contains instructions on how to generate makefiles for compiling test apps to
 against the emulator.
 
 Any RV64I (base instruction set) toolchain should work too (i have not tried any
-myself). Any elf binary compiled with the above mentioned toolchain should work
-with little work.
+myself) and any elf binary compiled with the above mentioned toolchain should work.
+ the compiled programs to run against the emulator must be
+statically linked and contain only the 64 bit base instruction set.
 
 The `testdata/` directory contains sample source files, makefiles, and compiled
 binaries used to test the emulator during its development.

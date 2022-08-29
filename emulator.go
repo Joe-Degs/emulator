@@ -6,36 +6,45 @@ import (
 	"debug/elf"
 	"fmt"
 	"os"
+	"path/filepath"
+	"unsafe"
 )
 
-// Emulator keeps the state of the emulated system
+// Emulator keeps the state of the emulated system in this case a machine of
+// RV64I architecture
 type Emulator struct {
 	*Mmu
+	file      ElfBinary
 	registers [33]uint64
 }
 
-// FileHeader holds elf file header information
+// ElfBinary holds data necessary to succefully prepare program for execution.
 type ElfBinary struct {
-	filename string
-	entry    uint64
-	segments []elf.ProgHeader
+	path, name string
+	args       []string
+	entry      uint64
+	segments   []elf.ProgHeader
 }
 
+// create a new emulator
 func NewEmulator(size uint) *Emulator {
 	return &Emulator{
-		NewMmu(size), [33]uint64{},
+		Mmu: NewMmu(size),
 	}
 }
 
-// Set the start of the program loaded into memory
-func (e *Emulator) SetProgramStart(addr uint64) {
+// Set the address at which to start program execution
+func (e *Emulator) setPC(addr uint64) {
 	e.programStart = VirtAddr(addr)
 	e.SetReg(Pc, addr)
 }
 
-// Fork an emulator
+// create an identical copy of the emulator
 func (e Emulator) Fork() *Emulator {
-	return &Emulator{e.Mmu.Fork(), [33]uint64{}}
+	return &Emulator{
+		Mmu:  e.Mmu.Fork(),
+		file: e.file,
+	}
 }
 
 func max(a, b uint) uint {
@@ -45,14 +54,14 @@ func max(a, b uint) uint {
 	return b
 }
 
-// Load executable binary into the emulator's address space
-func (e *Emulator) LoadSegments(hdr ElfBinary) error {
-	fileContents, err := os.ReadFile(hdr.filename)
+// Load executable binary into the emulator's memory unit for execution.
+func (e *Emulator) loadSegments() error {
+	fileContents, err := os.ReadFile(e.file.path)
 	if err != nil {
 		return err
 	}
 
-	for _, seg := range hdr.segments {
+	for _, seg := range e.file.segments {
 		// set memory as writable
 		alignedSize := (seg.Memsz + seg.Align) &^ seg.Align
 		e.SetPermissions(VirtAddr(seg.Vaddr), uint(alignedSize), PERM_WRITE)
@@ -77,32 +86,114 @@ func (e *Emulator) LoadSegments(hdr ElfBinary) error {
 			max(uint(e.curAlloc), uint(seg.Vaddr+seg.Memsz+seg.Align)&^uint(seg.Align)),
 		)
 	}
-
-	// set the entry point of the program in memory
-	e.SetProgramStart(hdr.entry)
+	e.setPC(e.file.entry)
 	return nil
 }
 
-func (e *Emulator) LoadFile(path string) error {
+// reserve space in memory for static and dynamic objects (stack and heap).
+func (e *Emulator) allocStackAndHeap() {
+	// stack starts at a 16-byte address 255 steps away from last address.
+	e.setStack(VirtAddr((e.Len() - 0xff) &^ 0xf))
+	e.SetReg(Sp, uint64(e.Stack()))
+	// calculate what to add to sp to get to end of memory.
+	end := uint(e.Len()-int(e.Stack()-STACK_SIZE)) - 1
+	e.SetPermissions(e.Stack()-STACK_SIZE, end, PERM_READ|PERM_WRITE)
+	e.setHeap(e.Allocate(HEAP_SIZE))
+}
+
+// This is what a program looks like in memory
+//
+//	SP<-+---------------+->0xff...(end)
+//     |               |
+//     |     stack     |
+//     |               |
+//     +---------------+
+//     |               |
+//     |    (unused)   |
+//     |               |
+//     +---------------+
+//     |               |
+//     |     heap      |
+//     |               |
+//     +---------------+
+//     |               |
+//     |  static data  |
+//     |               |
+//     +---------------+
+//     |               |
+//     | section .text |
+//     |  code segment |
+//     |               |
+//     +---------------+->0x0(start)
+//
+// MapProgram maps the executable elf file into memory to create a process image.
+// It also sets the heap and stack start points basically setting everything up
+// for execution to begin. it does the work of execv
+// int execv(const char *pathname, char *const argv[]);
+func (e *Emulator) MapProgram(path string, args []string) error {
 	elfBinary, err := elf.Open(path)
 	if err != nil {
 		return err
 	}
+	_, name := filepath.Split(path)
 
 	bin := ElfBinary{
-		filename: path,
+		name:     name,
+		path:     path,
+		args:     args,
 		entry:    elfBinary.FileHeader.Entry,
 		segments: make([]elf.ProgHeader, 0, len(elfBinary.Progs)),
 	}
 	for _, hdr := range elfBinary.Progs {
 		typ := hdr.ProgHeader.Type
-		if typ == elf.PT_LOAD || typ == elf.PT_PHDR {
+		if typ == elf.PT_LOAD {
 			bin.segments = append(bin.segments, hdr.ProgHeader)
 		}
 	}
-	return e.LoadSegments(bin)
+	e.file = bin
+	if err = e.loadSegments(); err != nil {
+		return err
+	}
+	e.allocStackAndHeap()
+
+	// insert name of executable as first argument in vector
+	args = append(args[:0], append([]string{e.file.name}, args[0:]...)...)
+	vec := nullTerminateArgs(args)
+	size := (len(vec) + 0xf) &^ 0xf
+	argv := VirtAddr(e.Reg(Sp) - uint64(size))
+	if err := e.WriteFrom(argv, vec); err != nil {
+		return err
+	}
+	// set up the stack for the main function
+	// int main(int argc, char *argv[], char *envp[])
+	err = push(e, uint64(0))          // evnp
+	err = push(e, uint64(argv))       // argv
+	err = push(e, int32(len(args)+1)) // argc
+	return err
 }
 
+// push is a routine for pushing values onto the stack
+func push[T Primitive](emu *Emulator, val T) error {
+	size := unsafe.Sizeof(val)
+	sp := emu.Reg(Sp) - uint64(size)
+	if err := WriteFromVal(emu.Mmu, VirtAddr(sp), val); err != nil {
+		return err
+	}
+	emu.SetReg(Sp, sp)
+	return nil
+}
+
+// null terminate arguments variables for the program
+func nullTerminateArgs(args []string) []byte {
+	var strs []byte
+	for _, str := range args {
+		s := append([]byte(str), 0)
+		strs = append(strs, s...)
+	}
+	return strs
+}
+
+// Set the specified registers value
 func (e *Emulator) SetReg(reg Register, val uint64) {
 	if reg == Zero {
 		return
@@ -110,8 +201,10 @@ func (e *Emulator) SetReg(reg Register, val uint64) {
 	e.registers[reg] = val
 }
 
+// Reg returns the value in the specified register.
 func (e Emulator) Reg(reg Register) uint64 { return e.registers[reg] }
 
+// IncPc moves the program counter to the next instruction
 func (e *Emulator) IncPc() { e.SetReg(Pc, e.Reg(Pc)+4) }
 
 // Given a register pointing into executable memory, this function
@@ -121,27 +214,36 @@ func (e *Emulator) ReadFromRegister(reg Register) (inst uint32, err error) {
 	return ReadIntoValPerms(e.Mmu, addr, inst, PERM_EXEC)
 }
 
-// NextInstAndOpcode gets the next instruction from memory and gets the opcode
+// NextInstAndOpcode gets the next instruction and opcode from memory
 func (e Emulator) NextInstAndOpcode() (inst uint32, opcode uint8, err error) {
 	inst, err = e.ReadFromRegister(Pc)
 	opcode = uint8(inst & 0b1111111)
 	return
 }
 
+// EmuExit signals a pause or end of execution by the emulator
 type EmuExit struct {
-    cause error
-    opcode uint8
-    pc uint64
+	cause  error
+	opcode uint8
+	pc     uint64
 }
 
 func (e EmuExit) Error() string {
-    return fmt.Sprintf(
-        "EmuExit {\n\t%s,\n\tpc: %#x,\n\topcode: %#08b\n}\n",
-        e.cause.Error(), e.pc, e.opcode,
-    )
+	return fmt.Sprintf(
+		"EmuExit {\n\t%s,\n\tpc: %#x,\n\topcode: %#08b\n}\n",
+		e.cause.Error(), e.pc, e.opcode,
+	)
 }
 
-// Run is the fetch - decode - execute loop
+// Done signals the emulator when the program executing exits succesfully
+type Done struct{ status int }
+
+func (d Done) Error() string {
+	return fmt.Sprintf("exited with %d", d.status)
+}
+
+// Run is the fetch - decode - execute loop (it gets the next instruction,
+// decodes it and performs the operations encoded into the instruction)
 func (e *Emulator) Run() (err error) {
 	for {
 		inst, opcode, err := e.NextInstAndOpcode()
@@ -149,6 +251,10 @@ func (e *Emulator) Run() (err error) {
 			return err
 		}
 		pc := e.Reg(Pc)
+
+		if VERBOSE_PC_OPCODE {
+			fmt.Printf("opcode: %#08b, pc: %#x\n", opcode, pc)
+		}
 
 		switch opcode {
 		case 0b0110011:
@@ -186,7 +292,7 @@ func (e *Emulator) Run() (err error) {
 			// Itype
 			// JALR
 			inst := Decode(inst, Itype{}).(Itype)
-			target := e.Reg(inst.rs1) + uint64(int64(inst.imm&^1))
+			target := e.Reg(inst.rs1) + uint64(int64(inst.imm))
 			e.SetReg(inst.rd, pc+4)
 			e.SetReg(Pc, target)
 			continue
@@ -214,14 +320,14 @@ func (e *Emulator) Run() (err error) {
 				}
 			case 0x2:
 				// BLT
-				if rs1 < rs2 {
+				if int64(rs1) < int64(rs2) {
 					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, simm)
 					continue
 				}
 			case 0x4:
 				// BGE
-				if rs1 >= rs2 {
+				if int64(rs1) >= int64(rs2) {
 					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, simm)
 					continue
@@ -236,8 +342,8 @@ func (e *Emulator) Run() (err error) {
 			case 0x7:
 				// BGEU
 				if rs1 >= rs2 {
-					simm := uint64(int64(inst.imm)) + pc
-					e.SetReg(Pc, uint64(simm))
+					simm := uint64(inst.imm) + pc
+					e.SetReg(Pc, simm)
 					continue
 				}
 			}
@@ -259,7 +365,7 @@ func (e *Emulator) Run() (err error) {
 			} else if inst == 0b0000000000010000000000000001110011 {
 				// EBREAK
 				return EmuExit{fmt.Errorf("ebreak\n"), opcode, pc}
-            }
+			}
 		default:
 			return fmt.Errorf("unhandled opcode: %#b", opcode)
 		}
