@@ -5,10 +5,13 @@ import "fmt"
 // syscalls is the syscall table, it maps the syscall number to the syscall
 // function.
 var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
+    29: ioctl,
 	222: mmap,
 	64:  write,
+    66: writev,
 	94:  exit, // exit_group
 	93:  exit,
+    98: futex,
 }
 
 // SysCall contains the syscall number and arguments. It also double as an
@@ -61,4 +64,21 @@ func write(e *Emulator, s SysCall) error {
 // void _exit(int status);
 func exit(e *Emulator, s SysCall) error {
 	return Done{int(s.a0)}
+}
+
+func futex(e *Emulator, s SysCall) error {
+    e.SetReg(A0, 1)
+    return nil
+}
+
+
+// 
+func ioctl(e *Emulator, s SysCall) error {
+    e.SetReg(A0, ^uint64(0))
+    return nil
+}
+
+// 
+func writev(e *Emulator, s SysCall) error {
+    return s
 }
