@@ -4,7 +4,7 @@ A simple [RV64I](https://book.rvemu.app/instruction-set/01-rv64i.html) RISC-V em
 It emulates a simple linux environment running on the 64bit base instruction set of the
 RISC-V architecture.
 
-### Building and Testing
+### Testing with musl_libc toolchain 
 The toolchain for building test applications for this project can be installed
 using instructions from [here](https://github.com/Joe-Degs/riscv). After installing
 and building the toolchain use [this](https://github.com/Joe-Degs/riscv/tree/master/projects),
@@ -24,6 +24,29 @@ The emulator is a go program so running is as trivial as executing
 go run . <path/to/test-binary>
 ```
 You could also just execute the `run.sh` to run the hello-world test program.
+
+### Testing with newlib toolchain
+To use a newlib toolchain to compile programs for the emulator,
+ which is the one I am switching to now because it is
+easier for me to wrap my head around and the syscalls way smaller.
+You can find a precompiled `riscv64-gcc-unknown-elf` with `newlib` toolchain for
+made for embedded systems [here](https://random-oracles.org/risc-v-gcc-toolchain/)
+
+Took me some doing to get it to work, maybe becuase I'm still new to the stuff.
+If you don't know what you are doing just like me, just copy the makefile from
+the directory [newtool](https://github.com/Joe-Degs/emulator/tree/master/testdata/newtool)
+into your directory, tweak it if need be: just figure it out basically. I'm
+the last person to be writing any kind of tutorial on using these toolchains.
+
+If you succesfully do compile a test program, run it against the emulator and if
+any problem arises fix it and do it all again. Atleast that's what I am doing.
+
+Everything else should work the same, the only difference is if you are using
+musl_libc you have more syscalls to implement and therefore more stuff to deal
+with.
+
+It doesn't really matter the C library you use, so long as you are willing, and
+you have time to make it work, have a go at it.
 
 ### Next Steps
 For now we are able to run simple programs in the emulator, but you will hit a panic when
@@ -55,6 +78,32 @@ new test programs that request unimplemented syscalls.
 Syscall names and their respective numbers can be found in `syscall-numbers.txt`
 So implement a syscall, stick in the syscall table `syscalls` in the `syscall.go`
 and you are good to go.
+
+#### minor improvements
+1. there are better error messages, I dont know if I should I call them error
+messages or reports or what. But they help you debug better.
+```
+joe@debian:~/go/src/github.com/Joe-Degs/emulator|| go run . testdata/newtool/test
+PATH: /home/joe/go/src/github.com/Joe-Degs/emulator/testdata/newtool/test
+FILENAME: test
+MEM SIZE: 0x1fffff
+STACK [0x1fff00 -> 0x1fef00]
+HEAP [0x17990 -> 0x18990]
+CURRENT ALLOCATION: 0x18990
+EmuExit {
+    zero:  0000000000000000  ra: 0000000000012304  sp:  00000000001ffdcc   gp:  0000000000015188
+    tp:    0000000000000000  t0: 00000000000102d4  t1:  000000000000000f   t2:  0000000000000000
+    s0/fp: 0000000000014968  s1: 0000000000000020  a0:  0000000000000020   a1:  0000000000013920
+    a2:    0000000000000020  a3: 0000000000000000  a4:  0000000000000000   a5:  0000000000000000
+    a6:    0000000000018dc0  a7: 0000000000000040  s2:  00000000001ffe9c   s3:  0000000000013920
+    s4:    00000000001ffe74  s5: 0000000000014968  s6:  000000007ffffc00   s7:  0000000000000000
+    s8:    0000000000000000  s9: 0000000000000000  s10: 0000000000000000   s11: 0000000000000000
+    t3:    0000000000000000  t4: 0000000000000000  t5:  0000000000000000   t6:  0000000000000000
+    pc:    0000000000013750
+    Syscall {num: 64, a0: 1, a1: 80160, a2: 32, a3: 0, a4: 0, a5: 0},
+    opcode: 0b01110011
+}
+```
 
 ### resources
 This project is inspired by [gamozolabs'](https://github.com/gamozolabs) [Fuzz
