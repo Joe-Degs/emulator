@@ -26,11 +26,11 @@ const (
 )
 
 // MemErrType represents the types of errors encountered during memory access
-type MemErrType uint8
+type MemErrType int
 
 const (
-	ErrCopy  MemErrType = iota // mem copy error
-	ErrPerms                   // mem permission error
+	ErrCopy  MemErrType = -1 // mem copy error
+	ErrPerms MemErrType = -2 // mem permission error
 )
 
 // MMUError contains values that make it easier to trace memory access errors

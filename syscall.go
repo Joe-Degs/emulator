@@ -1,17 +1,29 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // syscalls is the syscall table, it maps the syscall number to the syscall
 // function.
 var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
-    29: ioctl,
-	222: mmap,
-	64:  write,
-    66: writev,
-	94:  exit, // exit_group
-	93:  exit,
-    98: futex,
+	64:  sys_write,
+	66:  sys_writev,
+	94:  sys_exit, // exit_group
+	93:  sys_exit,
+	214: sys_brk,
+	222: sys_mmap,
+}
+
+// read len(buf) from virtual memory and write it to file descriptor
+func (e *Emulator) write(fd int, addr VirtAddr, count int) MemErrType {
+	buf := make([]byte, count)
+	if err := e.ReadInto(addr, buf); err != nil {
+		return err.(MMUError).typ
+	}
+	n, _ := fmt.Fprintf(e.files[fd], "%s", buf)
+	return MemErrType(n)
 }
 
 // SysCall contains the syscall number and arguments. It also double as an
@@ -44,41 +56,62 @@ func (e *Emulator) TrapIntoSystem() error {
 	return syscall.execute(e)
 }
 
+func (e *Emulator) RetVal(ret uint64) { e.SetReg(A0, ret) }
+
 // mmap syscall number 222
-func mmap(e *Emulator, s SysCall) error {
-	e.SetReg(A0, uint64(e.Heap()))
+func sys_mmap(e *Emulator, s SysCall) error {
+	e.RetVal(uint64(e.Heap()))
 	return nil
 }
 
 // ssize_t write(int fd, const void *buf, size_t count)
-func write(e *Emulator, s SysCall) error {
-	addr := VirtAddr(s.a1)
-	buf := make([]byte, s.a2)
-	if err := e.ReadIntoPerms(addr, buf, PERM_READ); err != nil {
-		return err
-	}
-	fmt.Printf("%s", buf)
-	return nil
+func sys_write(e *Emulator, s SysCall) error {
+	n := e.write(int(s.a0), VirtAddr(s.a1), int(s.a2))
+	e.RetVal(uint64(n))
+	return s
 }
 
 // void _exit(int status);
-func exit(e *Emulator, s SysCall) error {
+func sys_exit(e *Emulator, s SysCall) error {
 	return Done{int(s.a0)}
 }
 
-func futex(e *Emulator, s SysCall) error {
-    e.SetReg(A0, 1)
-    return nil
+// A C scather/gather vector type
+// the good thing is I think struct packing works the same way in C as in go
+// if that is not the case, then I'm fucked royally (i wouldn't know what to do)
+type iovec struct {
+	base VirtAddr
+	vlen int
 }
 
-
-// 
-func ioctl(e *Emulator, s SysCall) error {
-    e.SetReg(A0, ^uint64(0))
-    return nil
+// ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
+// write from a scatter vector
+func sys_writev(e *Emulator, s SysCall) error {
+	size := unsafe.Sizeof(iovec{})
+	buf := make([]byte, size)
+	addr := VirtAddr(s.a1)
+	var n int
+	for i := 0; i < int(s.a2); i++ {
+		if err := e.ReadIntoPerms(addr, buf, PERM_READ); err != nil {
+			return err
+		}
+		iov := (*iovec)(unsafe.Pointer(&buf[0]))
+		if a := e.write(int(s.a0), iov.base, iov.vlen); a < 0 {
+			return MMUError{typ: a, addr: iov.base}
+		} else {
+			n += int(a)
+		}
+		addr += VirtAddr(size)
+	}
+	e.RetVal(uint64(n))
+	return nil
 }
 
-// 
-func writev(e *Emulator, s SysCall) error {
-    return s
+// the brk syscall. It is looking like for newlib brk performs both the
+// functions of sbrk and brk syscalls. Atleast that is what is is looking like
+// at the moment.
+func sys_brk(e *Emulator, s SysCall) error {
+	fmt.Println("hit brk")
+	e.RetVal(uint64(e.curAlloc))
+	return nil
 }

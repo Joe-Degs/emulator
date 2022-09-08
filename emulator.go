@@ -14,8 +14,10 @@ import (
 // RV64I architecture
 type Emulator struct {
 	*Mmu
-	file      ElfBinary
-	registers [33]uint64
+	program    ElfBinary
+	programBrk VirtAddr
+	registers  [33]uint64
+	files      map[int]*os.File
 }
 
 // ElfBinary holds data necessary to succefully prepare program for execution.
@@ -30,6 +32,11 @@ type ElfBinary struct {
 func NewEmulator(size uint) *Emulator {
 	return &Emulator{
 		Mmu: NewMmu(size),
+		files: map[int]*os.File{
+			0: os.Stdin,
+			1: os.Stdout,
+			2: os.Stderr,
+		},
 	}
 }
 
@@ -42,8 +49,13 @@ func (e *Emulator) setPC(addr uint64) {
 // create an identical copy of the emulator
 func (e Emulator) Fork() *Emulator {
 	return &Emulator{
-		Mmu:  e.Mmu.Fork(),
-		file: e.file,
+		Mmu:     e.Mmu.Fork(),
+		program: e.program,
+		files: map[int]*os.File{
+			0: os.Stdin,
+			1: os.Stdout,
+			2: os.Stderr,
+		},
 	}
 }
 
@@ -56,12 +68,12 @@ func max(a, b uint) uint {
 
 // Load executable binary into the emulator's memory unit for execution.
 func (e *Emulator) loadSegments() error {
-	fileContents, err := os.ReadFile(e.file.path)
+	fileContents, err := os.ReadFile(e.program.path)
 	if err != nil {
 		return err
 	}
 
-	for _, seg := range e.file.segments {
+	for _, seg := range e.program.segments {
 		// set memory as writable
 		alignedSize := (seg.Memsz + seg.Align) &^ seg.Align
 		e.SetPermissions(VirtAddr(seg.Vaddr), uint(alignedSize), PERM_WRITE)
@@ -86,7 +98,11 @@ func (e *Emulator) loadSegments() error {
 			max(uint(e.curAlloc), uint(seg.Vaddr+seg.Memsz+seg.Align)&^uint(seg.Align)),
 		)
 	}
-	e.setPC(e.file.entry)
+	//TODO(Joe):
+	// the current alloc is also the program break increase it before setting
+	e.programBrk = e.curAlloc
+	e.curAlloc = ((e.curAlloc + 0x1000) + 0xf) &^ 0xf
+	e.setPC(e.program.entry)
 	return nil
 }
 
@@ -131,33 +147,33 @@ func (e *Emulator) allocStackAndHeap() {
 // for execution to begin. it does the work of execv
 // int execv(const char *pathname, char *const argv[]);
 func (e *Emulator) MapProgram(path string, args []string) error {
-	elfBinary, err := elf.Open(path)
+	bin, err := elf.Open(path)
 	if err != nil {
 		return err
 	}
 	_, name := filepath.Split(path)
 
-	bin := ElfBinary{
+	prog := ElfBinary{
 		name:     name,
 		path:     path,
 		args:     args,
-		entry:    elfBinary.FileHeader.Entry,
-		segments: make([]elf.ProgHeader, 0, len(elfBinary.Progs)),
+		entry:    bin.FileHeader.Entry,
+		segments: make([]elf.ProgHeader, 0, len(bin.Progs)),
 	}
-	for _, hdr := range elfBinary.Progs {
+	for _, hdr := range bin.Progs {
 		typ := hdr.ProgHeader.Type
 		if typ == elf.PT_LOAD {
-			bin.segments = append(bin.segments, hdr.ProgHeader)
+			prog.segments = append(prog.segments, hdr.ProgHeader)
 		}
 	}
-	e.file = bin
+	e.program = prog
 	if err = e.loadSegments(); err != nil {
 		return err
 	}
 	e.allocStackAndHeap()
 
 	// insert name of executable as first argument in vector
-	args = append(args[:0], append([]string{e.file.name}, args[0:]...)...)
+	args = append(args[:0], append([]string{e.program.name}, args[0:]...)...)
 	vec := nullTerminateArgs(args)
 	size := (len(vec) + 0xf) &^ 0xf
 	argv := VirtAddr(e.Reg(Sp) - uint64(size))
@@ -221,17 +237,36 @@ func (e Emulator) NextInstAndOpcode() (inst uint32, opcode uint8, err error) {
 	return
 }
 
+func (e Emulator) String() string {
+	fstring := `zero:  %016x  ra: %016x  sp:  %016x   gp:  %016x
+tp:    %016x  t0: %016x  t1:  %016x   t2:  %016x
+s0/fp: %016x  s1: %016x  a0:  %016x   a1:  %016x
+a2:    %016x  a3: %016x  a4:  %016x   a5:  %016x
+a6:    %016x  a7: %016x  s2:  %016x   s3:  %016x
+s4:    %016x  s5: %016x  s6:  %016x   s7:  %016x
+s8:    %016x  s9: %016x  s10: %016x   s11: %016x
+t3:    %016x  t4: %016x  t5:  %016x   t6:  %016x
+pc:    %016x`
+	return fmt.Sprintf(fstring, e.Reg(Zero), e.Reg(Ra), e.Reg(Sp), e.Reg(Gp),
+		e.Reg(Tp), e.Reg(T0), e.Reg(T1), e.Reg(T2), e.Reg(S0), e.Reg(S1),
+		e.Reg(A0), e.Reg(A1), e.Reg(A2), e.Reg(A3), e.Reg(A4), e.Reg(A5),
+		e.Reg(A6), e.Reg(A7), e.Reg(S2), e.Reg(S3), e.Reg(S4), e.Reg(S5),
+		e.Reg(S6), e.Reg(S7), e.Reg(S8), e.Reg(S9), e.Reg(S10), e.Reg(S11),
+		e.Reg(T3), e.Reg(T4), e.Reg(T5), e.Reg(T6), e.Reg(Pc))
+
+}
+
 // EmuExit signals a pause or end of execution by the emulator
 type EmuExit struct {
+	regs   string
 	cause  error
 	opcode uint8
-	pc     uint64
 }
 
 func (e EmuExit) Error() string {
 	return fmt.Sprintf(
-		"EmuExit {\n\t%s,\n\tpc: %#x,\n\topcode: %#08b\n}\n",
-		e.cause.Error(), e.pc, e.opcode,
+		"EmuExit {\n%s\n\t%s,\n\topcode: %#08b\n}\n",
+		e.regs, e.cause.Error(), e.opcode,
 	)
 }
 
@@ -266,7 +301,7 @@ func (e *Emulator) Run() (err error) {
 		case 0b0000011:
 			// itype - memory loads
 			if err := e.decodeItypeLoads(inst); err != nil {
-				return EmuExit{err, opcode, pc}
+				return EmuExit{e.String(), err, opcode}
 			}
 		case 0b0100011:
 			// stype - memory stores
@@ -355,16 +390,16 @@ func (e *Emulator) Run() (err error) {
 			e.decodeRtype32RegArith(inst)
 		case 0b0001111:
 			// FENCE
-			return EmuExit{fmt.Errorf("fence\n"), opcode, pc}
+			return EmuExit{e.String(), fmt.Errorf("fence\n"), opcode}
 		case 0b1110011:
 			if inst == 0b00000000000000000000000001110011 {
 				// ECALL
 				if err := e.TrapIntoSystem(); err != nil {
-					return EmuExit{err, opcode, pc}
+					return EmuExit{e.String(), err, opcode}
 				}
 			} else if inst == 0b0000000000010000000000000001110011 {
 				// EBREAK
-				return EmuExit{fmt.Errorf("ebreak\n"), opcode, pc}
+				return EmuExit{e.String(), fmt.Errorf("ebreak\n"), opcode}
 			}
 		default:
 			return fmt.Errorf("unhandled opcode: %#b", opcode)

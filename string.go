@@ -78,17 +78,18 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[ErrCopy-0]
-	_ = x[ErrPerms-1]
+	_ = x[ErrCopy - -1]
+	_ = x[ErrPerms - -2]
 }
 
-const _MemErrType_name = "ErrCopyErrPerms"
+const _MemErrType_name = "ErrPermsErrCopy"
 
-var _MemErrType_index = [...]uint8{0, 7, 15}
+var _MemErrType_index = [...]uint8{0, 8, 15}
 
 func (i MemErrType) String() string {
-	if i >= MemErrType(len(_MemErrType_index)-1) {
-		return "MemErrType(" + strconv.FormatInt(int64(i), 10) + ")"
+	i -= -2
+	if i < 0 || i >= MemErrType(len(_MemErrType_index)-1) {
+		return "MemErrType(" + strconv.FormatInt(int64(i+-2), 10) + ")"
 	}
 	return _MemErrType_name[_MemErrType_index[i]:_MemErrType_index[i+1]]
 }

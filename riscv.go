@@ -2,6 +2,12 @@
 // in instruction decode process.
 package main
 
+import (
+	"fmt"
+
+	"github.com/davecgh/go-spew/spew"
+)
+
 // Register represents a single riscv register file
 type Register uint8
 
@@ -176,5 +182,9 @@ func (Jtype) Decode(inst uint32) Instruction {
 // Decode converts the binary instruction into its struct type
 func Decode(inst uint32, instruction Instruction) Instruction {
 	dec := instruction.Decode(inst)
+	if VERBOSE_INST_DECODE {
+		spew.Dump(dec)
+		fmt.Println("")
+	}
 	return dec
 }

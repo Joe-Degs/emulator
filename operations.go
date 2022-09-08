@@ -169,11 +169,12 @@ func (e *Emulator) decodeItype32bitArith(ins uint32) {
 		if funct7 == 0x0 {
 			// SRLIW
 			e.SetReg(inst.rd, uint64(int64(int32(rs1>>shamt))))
-		} else if funct7 == 0x16 {
+		} else if funct7 == 0x20 {
 			// SRAIW
 			e.SetReg(inst.rd, uint64(int64(int32(rs1)>>shamt)))
 		} else {
-			panic("unreachable srai")
+			panic(fmt.Errorf("itype32load: funct7: %d, shamt: %d\n",
+				funct7, shamt))
 		}
 	}
 }

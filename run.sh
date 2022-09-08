@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-go run . ./testdata/hello/hello
+go run . ./testdata/printy/printy
