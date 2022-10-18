@@ -2,7 +2,7 @@
 
 A simple [RV64I](https://book.rvemu.app/instruction-set/01-rv64i.html) RISC-V emulator.
 It emulates a simple linux environment running on the 64bit base instruction set of the
-RISC-V architecture.
+RISC-V ISA.
 
 ### Testing with musl_libc toolchain 
 The toolchain for building test applications for this project can be installed
@@ -23,41 +23,42 @@ The emulator is a go program so running is as trivial as executing
 ```
 go run . <path/to/test-binary>
 ```
-You could also just execute the `run.sh` to run the hello-world test program.
 
 ### Testing with newlib toolchain
-To use a newlib toolchain to compile programs for the emulator,
- which is the one I am switching to now because it is
-easier for me to wrap my head around and the syscalls way smaller.
-You can find a precompiled `riscv64-gcc-unknown-elf` with `newlib` toolchain for
-made for embedded systems [here](https://random-oracles.org/risc-v-gcc-toolchain/)
+The [newlib](https://en.wikipedia.org/wiki/Newlib) toolchain--which is the one 
+I myself am going for right now--follow the instructions below.
 
-Took me some doing to get it to work, maybe becuase I'm still new to the stuff.
+You can find a precompiled `riscv64-gcc-unknown-elf` with `newlib` toolchain for
+embedded systems [here](https://random-oracles.org/risc-v-gcc-toolchain/)
+
+Took me some doing to get it to work becuase I'm new to the stuff.
 If you don't know what you are doing just like me, just copy the makefile from
 the directory [newtool](https://github.com/Joe-Degs/emulator/tree/master/testdata/newtool)
-into your directory, tweak it if need be: just figure it out basically. I'm
-the last person to be writing any kind of tutorial on using these toolchains.
+into your directory, tweak it if need be: *if you can't, figure it out!*. I'm
+the last person to be writing any kind of tutorial on these toolchains.
 
-If you succesfully do compile a test program, run it against the emulator and if
-any problem arises fix it and do it all again. Atleast that's what I am doing.
+If you succesfully compile a program with the toolchain, execute the program
+with the emulator to see if it works. If you encounter any hiccups try to figure
+it out or reach out to me let's figure it out together.
 
-Everything else should work the same, the only difference is if you are using
-musl_libc you have more syscalls to implement and therefore more stuff to deal
-with.
+Everything else should work fine (LOL!), the only difference is if you are using
+`musl_libc` you have more syscalls to implement and the many problems that come
+with doing it. It's _LINUX_ baby!
 
 It doesn't really matter the C library you use, so long as you are willing, and
 you have time to make it work, have a go at it.
 
 ### Next Steps
-For now we are able to run simple programs in the emulator, but you will hit a panic when
-you encounter a syscall that is not yet implemented. The panic contains info on the syscall
+I am able to run simple programs in the emulator (atleast I was at some point). 
+You will hit a panic when you encounter a syscall that is not yet implemented,
+which contains info on the syscall
 that is causing the error and the contents of its argument registers.
 ```
 PATH: /home/joe/go/src/github.com/Joe-Degs/emulator/testdata/hello/hello
 FILENAME: hello
 CURRENT ALLOCATION: 0x140b0
 STACK [0x240b0 -> 0x140b0]
-panic: Syscall{num: 64, a0: 1, a1: 77416, a2: 12, a3: 0, a4: 7, a5: 70816}
+panic: Syscall {num: 64, a0: 1, a1: 77416, a2: 12, a3: 0, a4: 7, a5: 70816}
 
 
 goroutine 1 [running]:
@@ -72,16 +73,16 @@ the values of argument register `a0-a5`. Syscalls are implemented in the file
 func(*Emulator, SysCall) error
 
 ```
-Implementing the syscalls should be trivial, but I have
-quite a lot on my plate right now. So I'll be doing it incrementally when I have
-new test programs that request unimplemented syscalls.
+Implementing the syscalls should be trivial (LOL!), but I'll be doing it
+incrementally, i.e implementing syscalls only when I have need of them.
 Syscall names and their respective numbers can be found in `syscall-numbers.txt`
 So implement a syscall, stick in the syscall table `syscalls` in the `syscall.go`
-and you are good to go.
+and you might be good to go.
 
-#### minor improvements
+#### minor improvements in debugging
 1. there are better error messages, I dont know if I should I call them error
-messages or reports or what. But they help you debug better.
+messages or reports or logs. But they help you understand why the emulator
+crushed anytime it does.
 ```
 joe@debian:~/go/src/github.com/Joe-Degs/emulator|| go run . testdata/newtool/test
 PATH: /home/joe/go/src/github.com/Joe-Degs/emulator/testdata/newtool/test
