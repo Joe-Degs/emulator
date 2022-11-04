@@ -68,7 +68,7 @@ func sys_mmap(e *Emulator, s SysCall) error {
 func sys_write(e *Emulator, s SysCall) error {
 	n := e.write(int(s.a0), VirtAddr(s.a1), int(s.a2))
 	e.RetVal(uint64(n))
-	return s
+	return nil
 }
 
 // void _exit(int status);
@@ -107,11 +107,30 @@ func sys_writev(e *Emulator, s SysCall) error {
 	return nil
 }
 
-// the brk syscall. It is looking like for newlib brk performs both the
-// functions of sbrk and brk syscalls. Atleast that is what is is looking like
-// at the moment.
+// the `brk` syscall is used to extend the program break essentially allocating
+// more space in the data segment for use by the program
+var count = 0
+
 func sys_brk(e *Emulator, s SysCall) error {
-	fmt.Println("hit brk")
-	e.RetVal(uint64(e.curAlloc))
+	count += 1
+	if s.a0 == 0 {
+		e.RetVal(uint64(e.programBrk))
+	} else if s.a0 > 0 /* && VirtAddr(s.a0) > e.programBrk */ {
+		// extend program break
+		size := VirtAddr(s.a0) - e.programBrk
+		e.programBrk = e.Mmu.Allocate(uint(size))
+		e.curAlloc += (size + 0xf) &^ 0xf
+		fmt.Printf("brk: %#x, a0: %#x, size: %d, alloc: %#x\n", e.programBrk, s.a0, size, e.curAlloc)
+		e.RetVal(s.a0)
+	} else {
+		// negative -1
+		e.RetVal(0xffffffffffffffff)
+	}
+
+	// break if you call brk twice in an inferior program
+	if count >= 2 {
+		return MMUError{}
+	}
+
 	return nil
 }

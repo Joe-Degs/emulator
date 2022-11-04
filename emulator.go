@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"unsafe"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 // Emulator keeps the state of the emulated system in this case a machine of
@@ -98,10 +100,13 @@ func (e *Emulator) loadSegments() error {
 			max(uint(e.curAlloc), uint(seg.Vaddr+seg.Memsz+seg.Align)&^uint(seg.Align)),
 		)
 	}
+
 	//TODO(Joe):
-	// the current alloc is also the program break increase it before setting
+	// the current alloc is also the program break increase it before exectuting
+	// program
+	// And do we really need a program break?
 	e.programBrk = e.curAlloc
-	e.curAlloc = ((e.curAlloc + 0x1000) + 0xf) &^ 0xf
+	// e.curAlloc = ((e.curAlloc + 0x1000) + 0xf) &^ 0xf
 	e.setPC(e.program.entry)
 	return nil
 }
@@ -165,6 +170,10 @@ func (e *Emulator) MapProgram(path string, args []string) error {
 		if typ == elf.PT_LOAD {
 			prog.segments = append(prog.segments, hdr.ProgHeader)
 		}
+	}
+
+	if DUMP_ELF_INFO {
+		spew.Dump(prog)
 	}
 	e.program = prog
 	if err = e.loadSegments(); err != nil {
@@ -282,10 +291,10 @@ func (d Done) Error() string {
 func (e *Emulator) Run() (err error) {
 	for {
 		inst, opcode, err := e.NextInstAndOpcode()
-		if err != nil {
-			return err
-		}
 		pc := e.Reg(Pc)
+		if err != nil {
+			return EmuExit{e.String(), err, opcode}
+		}
 
 		if VERBOSE_PC_OPCODE {
 			fmt.Printf("opcode: %#08b, pc: %#x\n", opcode, pc)

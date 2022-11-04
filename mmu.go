@@ -17,7 +17,7 @@ const (
 	PERM_EXEC  Perm = 0x1 // executable permission
 	PERM_WRITE Perm = 0x2 // write permission
 	PERM_READ  Perm = 0x4 // read permission
-	PERM_RAW   Perm = 0x3 // read-after-write permission
+	PERM_RAW   Perm = 0x8 // read-after-write permission
 
 	DIRTY_BLOCK_SIZE = 0x7f
 
@@ -218,6 +218,7 @@ func (m Mmu) ReadIntoPerms(addr VirtAddr, buf []uint8, perm Perm) error {
 
 	for _, p := range perms {
 		// check if all perms on region of memory is expected perm
+		// if (p & perm) == 0 {
 		if (p & perm) != perm {
 			return MMUError{typ: ErrPerms, addr: addr, size: uint(len(buf)), perm: perm}
 		}
