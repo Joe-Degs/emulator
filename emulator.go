@@ -107,6 +107,7 @@ func (e *Emulator) loadSegments() error {
 	// And do we really need a program break?
 	e.programBrk = e.curAlloc
 	// e.curAlloc = ((e.curAlloc + 0x1000) + 0xf) &^ 0xf
+
 	e.setPC(e.program.entry)
 	return nil
 }
@@ -124,28 +125,28 @@ func (e *Emulator) allocStackAndHeap() {
 
 // This is what a program looks like in memory
 //
-//	SP<-+---------------+->0xff...(end)
-//     |               |
-//     |     stack     |
-//     |               |
-//     +---------------+
-//     |               |
-//     |    (unused)   |
-//     |               |
-//     +---------------+
-//     |               |
-//     |     heap      |
-//     |               |
-//     +---------------+
-//     |               |
-//     |  static data  |
-//     |               |
-//     +---------------+
-//     |               |
-//     | section .text |
-//     |  code segment |
-//     |               |
-//     +---------------+->0x0(start)
+//		SP<-+---------------+->0xff...(end)
+//	    |               |
+//	    |     stack     |
+//	    |               |
+//	    +---------------+
+//	    |               |
+//	    |    (unused)   |
+//	    |               |
+//	    +---------------+
+//	    |               |
+//	    |     heap      |
+//	    |               |
+//	    +---------------+
+//	    |               |
+//	    |  static data  |
+//	    |               |
+//	    +---------------+
+//	    |               |
+//	    | section .text |
+//	    |  code segment |
+//	    |               |
+//	    +---------------+->0x0(start)
 //
 // MapProgram maps the executable elf file into memory to create a process image.
 // It also sets the heap and stack start points basically setting everything up
@@ -189,6 +190,7 @@ func (e *Emulator) MapProgram(path string, args []string) error {
 	if err := e.WriteFrom(argv, vec); err != nil {
 		return err
 	}
+
 	// set up the stack for the main function
 	// int main(int argc, char *argv[], char *envp[])
 	err = push(e, uint64(0))          // evnp
@@ -265,7 +267,7 @@ pc:    %016x`
 
 }
 
-// EmuExit signals a pause or end of execution by the emulator
+// EmuExit signals a pause or end of execution of the emulator
 type EmuExit struct {
 	regs   string
 	cause  error
@@ -279,7 +281,7 @@ func (e EmuExit) Error() string {
 	)
 }
 
-// Done signals the emulator when the program executing exits succesfully
+// Done signals the emulator when a program pauses/stops execution.
 type Done struct{ status int }
 
 func (d Done) Error() string {
