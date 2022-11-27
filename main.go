@@ -1,48 +1,59 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 //go:generate stringer -type=Register,Perm,MemErrType -output=string.go
 
 var (
-	// verbose output
-	VERBOSE = true
-
-	// verbose output with pc and opcode
-	VERBOSE_PC_OPCODE = true
-
-	VERBOSE_INST_DECODE = true
-
-	// log emulator state on error
-	LOG_STATE = true
-
-	// dump the info of the loadable elf file
-	DUMP_ELF_INFO = true
-
-	// size of the programs address space
-	MEM_SIZE uint = 2 * 1024 * 1024
+	VERBOSE             bool
+	VERBOSE_PC_OPCODE   bool
+	VERBOSE_INST_DECODE bool
+	LOG_STATE           bool
+	DUMP_ELF_INFO       bool
+	MEM_SIZE            uint // = 2 * 1024 * 1024
 )
 
+func init() {
+	flag.BoolVar(&VERBOSE, "v", false, "verbose output: emulator runtime information")
+	flag.BoolVar(&VERBOSE_PC_OPCODE, "verbose-pc", false, "verbose output; PC")
+	flag.BoolVar(&VERBOSE_INST_DECODE, "verbose-inst", false, "verbose output: instruction decode info")
+	flag.BoolVar(&LOG_STATE, "dump-state", false, "dump state of emulator when the inferior program encounters error")
+	flag.BoolVar(&DUMP_ELF_INFO, "elf-info", false, "dump loaded elf binary info")
+	flag.UintVar(&MEM_SIZE, "memsize", 1024*1024, "specify the memory size")
+}
+
+func exitf(pattern string, args ...any) {
+	if !strings.HasSuffix(pattern, "\n") {
+		pattern = pattern + "\n"
+	}
+	fmt.Fprintf(os.Stderr, pattern, args...)
+	flag.Usage()
+	os.Exit(1)
+}
+
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("Usage: simpmulator <path/to/binary>")
+	flag.Parse()
+	args := flag.Args()
+	if len(args) < 1 {
+		exitf("%s [OPTIONS] <path/to/binary> [PROG ARGS]", os.Args[0])
 	}
 	var (
 		path string
 		err  error
 	)
-	if path, err = filepath.Abs(os.Args[1]); err != nil {
-		log.Fatal(err)
+	if path, err = filepath.Abs(args[0]); err != nil {
+		exitf("%v", err)
 	}
 
 	emu := NewEmulator(MEM_SIZE)
-	if err := emu.MapProgram(path, os.Args[1:]); err != nil {
-		panic(err)
+	if err := emu.MapProgram(path, args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
 
 	if VERBOSE {
@@ -55,8 +66,7 @@ func main() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println(emu.String())
-			log.Fatal("panic")
+			exitf(emu.String())
 		}
 	}()
 
@@ -71,15 +81,15 @@ func handleErrors(emu *Emulator, err error) {
 		switch t := e.cause.(type) {
 		case MMUError:
 			if LOG_STATE {
-				fmt.Println(e.Error())
+				emu.Inspect(t.addr, t.size)
+				emu.InspectPerms(t.addr, t.size)
+				exitf("%s", e.Error())
 			}
-			emu.Inspect(t.addr, t.size)
-			emu.InspectPerms(t.addr, t.size)
 			return
 		case Done:
 			os.Exit(t.status)
 		}
 		return
 	}
-	panic(err)
+	exitf("%v", err)
 }

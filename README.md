@@ -1,41 +1,64 @@
-## simpmulator
+# simpmulator
 
-A simple [RV64I](https://book.rvemu.app/instruction-set/01-rv64i.html) RISC-V emulator.
-It emulates a simple linux environment running on the 64bit base instruction set of the
-RISC-V ISA.
+Hello lads and lasses! 
+This project features a [RV64I](https://book.rvemu.app/instruction-set/01-rv64i.html) emulator.
+It is a learning project that seeks to emulate a simple linux runtime environment for 
+the RISC-V 64bit base instruction set. The project is built to run code compiled
+for the risc-v integer architecture using any compiler toolchain of your choosing assuming you
+have implemented the syscalls and other runtime dependencies that the toolchain.
 
-### Testing with musl_libc toolchain 
-The toolchain for building test applications for this project can be installed
-using instructions from [here](https://github.com/Joe-Degs/riscv). After installing
-and building the toolchain use [this](https://github.com/Joe-Degs/riscv/tree/master/projects),
-it contains instructions on how to generate makefiles for compiling test apps to run
-against the emulator.
+It should be easy to extend the project to other use cases that require an emulator, and this
+is something I hope to explore in the near future. Right now I'm still learning
+and trying to get the simple use case of executing programs right.
 
-Any RV64I (base instruction set) toolchain should work too (i have not tried any
-myself) and any elf binary compiled with the above mentioned toolchain should work.
- the compiled programs to run against the emulator must be
-statically linked and contain only the 64 bit base instruction set.
+If you want to hack on this project or on something similar to this, you can hit me up. I would
+like any criticism and help I can get. Even better if you wanna join me on the journey of
+learning how computers work.
 
-The `testdata/` directory contains sample source files, makefiles, and compiled
-binaries used to test the emulator during its development.
+### Building and running emulator
+To build the project, clone this repository and run `make build`
+After that you can take the built emulator for a spin by running `make` or `make run`, which
+runs a test hello world program.
 
-The emulator is a go program so running is as trivial as executing
+The emulator supports commandline options for tweaking the runtime environment it provides
+to the programs that it executes. To see those, run the emulator without any arguments.
+You can find other sample test programs in the `testdata` directory.
+
+Executing a helloworld program is as simple as doing the following:
 ```
-go run . <path/to/test-binary>
+joe@debian:~/dev/emulator$ ./simpmulator testdata/musl/hello/hello
+Hello World
 ```
+
+The rest of the sections below contain guides on how to build your own `rv64i` program to run
+against the emulator. And how to extend the emulator if you want to.
+
+### Testing with the musl_libc toolchain 
+The [musl](https://www.musl-libc.org/intro.html) toolchain for building test 
+applications for this project can be installed using instructions from 
+[here](https://github.com/Joe-Degs/riscv). 
+After installing and building the toolchain checkout this 
+[project](https://github.com/Joe-Degs/riscv/tree/master/projects), it contains 
+instructions on how to generate makefiles for generating binaries that can be 
+executed in the emulator.
+
+The `testdata/musl/` directory contains sample source files, makefiles and binaries
+you can try out before going out to build your own.
 
 ### Testing with newlib toolchain
-The [newlib](https://en.wikipedia.org/wiki/Newlib) toolchain--which is the one 
-I myself am going for right now--follow the instructions below.
+The [newlib](https://en.wikipedia.org/wiki/Newlib) toolchain used in this project
+can be installed by doing as follows:
+A precompiled `riscv64-gcc-unknown-elf` with `newlib` toolchain for embedded systems 
+can be found [here](https://random-oracles.org/risc-v-gcc-toolchain/). Download the
+the tar archive, unarchive it into a `/opt/risc-newlib-toolchain` directory and
+have fun hacking.
 
-You can find a precompiled `riscv64-gcc-unknown-elf` with `newlib` toolchain for
-embedded systems [here](https://random-oracles.org/risc-v-gcc-toolchain/)
-
-Took me some doing to get it to work becuase I'm new to the stuff.
-If you don't know what you are doing just like me, just copy the makefile from
-the directory [newtool](https://github.com/Joe-Degs/emulator/tree/master/testdata/newtool)
-into your directory, tweak it if need be: *if you can't, figure it out!*. I'm
-the last person to be writing any kind of tutorial on these toolchains.
+Took me some doing to get it to work because I'm new to the stuff.
+If you don't know what you are doing just like me and you want to use the toolchain to build your
+own binaries, copy any of  the makefiles from the 
+[newlibc](https://github.com/Joe-Degs/emulator/tree/master/testdata/newlibc) `testdata/newlibc`
+directory, tweak it if need be: *if you can't, fuck around a lil bit, you'll figure it out!*. 
+Or hit me up, with our collective energies we might be able to *fuck around faster and figure it out*
 
 If you succesfully compile a program with the toolchain, execute the program
 with the emulator to see if it works. If you encounter any hiccups try to figure
@@ -75,16 +98,17 @@ func(*Emulator, SysCall) error
 ```
 Implementing the syscalls should be trivial (LOL!), but I'll be doing it
 incrementally, i.e implementing syscalls only when I have need of them.
-Syscall names and their respective numbers can be found in `syscall-numbers.txt`
+Syscall names and their respective numbers can be found in `*syscalls*.txt`
 So implement a syscall, stick in the syscall table `syscalls` in the `syscall.go`
 and you might be good to go.
 
-#### minor improvements in debugging
-1. there are better error messages, I dont know if I should I call them error
-messages or reports or logs. But they help you understand why the emulator
-crushed anytime it does.
+### features
+- Memory mapping unit for mapping programs into memory
+- Memory permissions to ensure secured access.
+- Ability to reset/clone/fork the execution context provided by the emulator.
+- Ability to dump execution context for easy debugging of issues.
 ```
-joe@debian:~/go/src/github.com/Joe-Degs/emulator|| go run . testdata/newtool/test
+joe@debian:~/dev/emulator$ ./simpmulator -v -elf-info testdata/newlibc/newtool/test
 PATH: /home/joe/go/src/github.com/Joe-Degs/emulator/testdata/newtool/test
 FILENAME: test
 MEM SIZE: 0x1fffff
