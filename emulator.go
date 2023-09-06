@@ -166,6 +166,7 @@ func (e *Emulator) MapProgram(path string, args []string) error {
 		entry:    bin.FileHeader.Entry,
 		segments: make([]elf.ProgHeader, 0, len(bin.Progs)),
 	}
+
 	for _, hdr := range bin.Progs {
 		typ := hdr.ProgHeader.Type
 		if typ == elf.PT_LOAD {
@@ -174,8 +175,10 @@ func (e *Emulator) MapProgram(path string, args []string) error {
 	}
 
 	if DUMP_ELF_INFO {
+		fmt.Println("")
 		spew.Dump(prog)
 	}
+
 	e.program = prog
 	if err = e.loadSegments(); err != nil {
 		return err
@@ -193,8 +196,9 @@ func (e *Emulator) MapProgram(path string, args []string) error {
 
 	// set up the stack for the main function
 	// int main(int argc, char *argv[], char *envp[])
-	err = push(e, uint64(0))          // evnp
-	err = push(e, uint64(argv))       // argv
+	// lets ignore all the errors because we can!
+	_ = push(e, uint64(0))            // evnp
+	_ = push(e, uint64(argv))         // argv
 	err = push(e, int32(len(args)+1)) // argc
 	return err
 }
@@ -302,6 +306,8 @@ func (e *Emulator) Run() (err error) {
 			fmt.Printf("opcode: %#08b, pc: %#x\n", opcode, pc)
 		}
 
+		// time.Sleep(300 * time.Millisecond)
+
 		switch opcode {
 		case 0b0110011:
 			// rtype - register - register arithmetic
@@ -401,7 +407,7 @@ func (e *Emulator) Run() (err error) {
 			e.decodeRtype32RegArith(inst)
 		case 0b0001111:
 			// FENCE
-			return EmuExit{e.String(), fmt.Errorf("fence\n"), opcode}
+			return EmuExit{e.String(), fmt.Errorf("fence"), opcode}
 		case 0b1110011:
 			if inst == 0b00000000000000000000000001110011 {
 				// ECALL
@@ -410,12 +416,11 @@ func (e *Emulator) Run() (err error) {
 				}
 			} else if inst == 0b0000000000010000000000000001110011 {
 				// EBREAK
-				return EmuExit{e.String(), fmt.Errorf("ebreak\n"), opcode}
+				return EmuExit{e.String(), fmt.Errorf("ebreak"), opcode}
 			}
 		default:
 			return fmt.Errorf("unhandled opcode: %#b", opcode)
 		}
 		e.IncPc()
 	}
-	return nil
 }

@@ -16,16 +16,6 @@ var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
 	222: sys_mmap,
 }
 
-// read len(buf) from virtual memory and write it to file descriptor
-func (e *Emulator) write(fd int, addr VirtAddr, count int) MemErrType {
-	buf := make([]byte, count)
-	if err := e.ReadInto(addr, buf); err != nil {
-		return err.(MMUError).typ
-	}
-	n, _ := fmt.Fprintf(e.files[fd], "%s", buf)
-	return MemErrType(n)
-}
-
 // SysCall contains the syscall number and arguments. It also double as an
 // error for when the syscall is not implemented.
 type SysCall struct {
@@ -53,7 +43,24 @@ func (e *Emulator) TrapIntoSystem() error {
 		e.Reg(A7), e.Reg(A0), e.Reg(A1), e.Reg(A2),
 		e.Reg(A3), e.Reg(A4), e.Reg(A5),
 	}
+	if VERBOSE_SYSCALL {
+		fmt.Printf("%+v\n", syscall)
+	}
 	return syscall.execute(e)
+}
+
+// read len(buf) from virtual memory and write it to file descriptor
+func (e *Emulator) write(fd int, addr VirtAddr, count int) MemErrType {
+	buf := make([]byte, count)
+	if err := e.ReadInto(addr, buf); err != nil {
+		return err.(MMUError).typ
+	}
+	n, _ := fmt.Fprintf(e.files[fd], "%s", buf)
+	// TODO(@Joe-Degs): currently executing the program in testdata/newlibc/duplicate
+	// results in a write that returns one less than what is actually written.
+	// So we return a meme error to further investigate the possible cause of the
+	// problem.
+	return MemErrType(n)
 }
 
 func (e *Emulator) RetVal(ret uint64) { e.SetReg(A0, ret) }
@@ -65,10 +72,14 @@ func sys_mmap(e *Emulator, s SysCall) error {
 }
 
 // ssize_t write(int fd, const void *buf, size_t count)
+// TODO(@Joe-Degs): this function is returning one less
+// actual amount of bytes read from memory or it is actually
+// reading one less than.
 func sys_write(e *Emulator, s SysCall) error {
 	n := e.write(int(s.a0), VirtAddr(s.a1), int(s.a2))
+	fmt.Printf("sys_write: %d, wrote: %d\n", s.num, n)
 	e.RetVal(uint64(n))
-	return nil
+	return s
 }
 
 // void _exit(int status);

@@ -4,11 +4,17 @@ ARGS?=testdata/musl/hello/hello
 run: $(BINARY)
 	./$< $(ARGS)
 
-build: $(BINARY) gen
-	go build -o $<
+$(BINARY): gen
+	go build -o $@
+
+debug: $(BINARY)
+	./$< -v -elf-info -dump-state -verbose-pc $(ARGS)
+
+debug-inst: $(BINARY)
+	./$< -v -elf-info -dump-state -verbose-inst -verbose-pc $(ARGS)
 
 gen:
-	go get .
+	#go get .
 	go generate .
 
 clean:

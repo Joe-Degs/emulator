@@ -173,7 +173,7 @@ func (e *Emulator) decodeItype32bitArith(ins uint32) {
 			// SRAIW
 			e.SetReg(inst.rd, uint64(int64(int32(rs1)>>shamt)))
 		} else {
-			panic(fmt.Errorf("itype32load: funct7: %d, shamt: %d\n",
+			panic(fmt.Errorf("itype32load: funct7: %d, shamt: %d",
 				funct7, shamt))
 		}
 	}
