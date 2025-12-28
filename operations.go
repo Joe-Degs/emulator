@@ -6,11 +6,51 @@ import (
 	"fmt"
 )
 
+func (e *Emulator) decodeMext(inst Rtype, rs1, rs2 uint64) {
+	switch inst.funct3 {
+	case 0x0: // MUL
+		e.SetReg(inst.rd, rs1*rs2)
+	case 0x1, 0x2, 0x3: // MULH/MULHSU/MULHU
+		panic("MULH/MULHSU/MULHU not implemented")
+	case 0x4: // DIV
+		e.SetReg(inst.rd, uint64(int64(rs1)/int64(rs2)))
+	case 0x5: // DIVU
+		e.SetReg(inst.rd, rs1/rs2)
+	case 0x6: // REM
+		e.SetReg(inst.rd, uint64(int64(rs1)%int64(rs2)))
+	case 0x7: // REMU
+		e.SetReg(inst.rd, rs1%rs2)
+	}
+}
+
+func (e *Emulator) decodeMext32(inst Rtype, rs1, rs2 uint32) {
+	switch inst.funct3 {
+	case 0x0: // MULW
+		res := int32(rs1) * int32(rs2)
+		e.SetReg(inst.rd, uint64(int64(res)))
+	case 0x4: // DIVW
+		res := int32(rs1) / int32(rs2)
+		e.SetReg(inst.rd, uint64(int64(res)))
+	case 0x5: // DIVUW
+		e.SetReg(inst.rd, uint64(int64(int32(rs1/rs2))))
+	case 0x6: // REMW
+		res := int32(rs1) % int32(rs2)
+		e.SetReg(inst.rd, uint64(int64(res)))
+	case 0x7: // REMUW
+		e.SetReg(inst.rd, uint64(int64(int32(rs1%rs2))))
+	}
+}
+
 // Rtype register-register arithmetic operations
 func (e *Emulator) decodeRtypeArith(ins uint32) {
 	inst := Decode(ins, Rtype{}).(Rtype)
 	rs1 := e.Reg(inst.rs1)
 	rs2 := e.Reg(inst.rs2)
+
+	if inst.funct7 == 0x1 {
+		e.decodeMext(inst, rs1, rs2)
+		return
+	}
 
 	switch inst.funct3 | inst.funct7 {
 	case 0x0:
@@ -62,6 +102,11 @@ func (e *Emulator) decodeRtype32RegArith(ins uint32) {
 	inst := Decode(ins, Rtype{}).(Rtype)
 	rs1 := uint32(e.Reg(inst.rs1))
 	rs2 := uint32(e.Reg(inst.rs2))
+
+	if inst.funct7 == 0x1 {
+		e.decodeMext32(inst, rs1, rs2)
+		return
+	}
 
 	switch inst.funct3 | inst.funct7 {
 	case 0x0:

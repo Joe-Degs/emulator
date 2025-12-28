@@ -79,7 +79,7 @@ func sys_write(e *Emulator, s SysCall) error {
 	n := e.write(int(s.a0), VirtAddr(s.a1), int(s.a2))
 	fmt.Printf("sys_write: %d, wrote: %d\n", s.num, n)
 	e.RetVal(uint64(n))
-	return s
+	return nil
 }
 
 // void _exit(int status);

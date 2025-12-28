@@ -370,14 +370,14 @@ func (e *Emulator) Run() (err error) {
 					e.SetReg(Pc, simm)
 					continue
 				}
-			case 0x2:
+			case 0x4:
 				// BLT
 				if int64(rs1) < int64(rs2) {
 					simm := uint64(int64(inst.imm)) + pc
 					e.SetReg(Pc, simm)
 					continue
 				}
-			case 0x4:
+			case 0x5:
 				// BGE
 				if int64(rs1) >= int64(rs2) {
 					simm := uint64(int64(inst.imm)) + pc
