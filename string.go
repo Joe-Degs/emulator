@@ -48,10 +48,11 @@ const _Register_name = "ZeroRaSpGpTpT0T1T2S0S1A0A1A2A3A4A5A6A7S2S3S4S5S6S7S8S9S1
 var _Register_index = [...]uint8{0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 57, 60, 62, 64, 66, 68, 70}
 
 func (i Register) String() string {
-	if i >= Register(len(_Register_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_Register_index)-1 {
 		return "Register(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Register_name[_Register_index[i]:_Register_index[i+1]]
+	return _Register_name[_Register_index[idx]:_Register_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -99,9 +100,9 @@ const _MemErrType_name = "ErrPermsErrCopy"
 var _MemErrType_index = [...]uint8{0, 8, 15}
 
 func (i MemErrType) String() string {
-	i -= -2
-	if i < 0 || i >= MemErrType(len(_MemErrType_index)-1) {
-		return "MemErrType(" + strconv.FormatInt(int64(i+-2), 10) + ")"
+	idx := int(i) - -2
+	if i < -2 || idx >= len(_MemErrType_index)-1 {
+		return "MemErrType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _MemErrType_name[_MemErrType_index[i]:_MemErrType_index[i+1]]
+	return _MemErrType_name[_MemErrType_index[idx]:_MemErrType_index[idx+1]]
 }

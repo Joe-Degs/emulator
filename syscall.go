@@ -12,6 +12,7 @@ var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
 	66:  sys_writev,
 	94:  sys_exit, // exit_group
 	93:  sys_exit,
+	96:  sys_set_tid_address,
 	214: sys_brk,
 	222: sys_mmap,
 }
@@ -94,6 +95,12 @@ func sys_exit(e *Emulator, s SysCall) error {
 type iovec struct {
 	base VirtAddr
 	vlen int
+}
+
+func sys_set_tid_address(e *Emulator, s SysCall) error {
+	// e.SetReg(A0, uint64(s.a0))
+	e.RetVal(1)
+	return nil
 }
 
 // ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
