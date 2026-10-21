@@ -92,6 +92,9 @@ func handleErrors(emu *Emulator, err error) {
 			return
 		case Done:
 			os.Exit(t.status)
+		default:
+			exitf("%v", e.cause)
+			return
 		}
 		return
 	}

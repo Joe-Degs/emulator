@@ -8,11 +8,14 @@ import (
 // syscalls is the syscall table, it maps the syscall number to the syscall
 // function.
 var syscalls = map[uint64]func(e *Emulator, s SysCall) error{
+	29:  sys_ioctl,
 	64:  sys_write,
 	66:  sys_writev,
 	94:  sys_exit, // exit_group
 	93:  sys_exit,
 	96:  sys_set_tid_address,
+	178: sys_gettid,
+	132: sys_sigaltstack,
 	214: sys_brk,
 	222: sys_mmap,
 }
@@ -50,6 +53,20 @@ func (e *Emulator) TrapIntoSystem() error {
 	return syscall.execute(e)
 }
 
+// https://linux.die.net/man/2/ioctl
+// https://linux.die.net/man/2/ioctl_list
+func sys_ioctl(e *Emulator, s SysCall) error {
+	const ENOTTY = 25
+	switch s.a1 {
+	case 0x5413:
+		// TIOCGWINSZ	struct winsize *
+		e.RetErr(ENOTTY)
+		return nil
+	default:
+		return fmt.Errorf("%w unhandled ioctl op: %#x", s, s.a1)
+	}
+}
+
 // read len(buf) from virtual memory and write it to file descriptor
 func (e *Emulator) write(fd int, addr VirtAddr, count int) MemErrType {
 	buf := make([]byte, count)
@@ -64,7 +81,8 @@ func (e *Emulator) write(fd int, addr VirtAddr, count int) MemErrType {
 	return MemErrType(n)
 }
 
-func (e *Emulator) RetVal(ret uint64) { e.SetReg(A0, ret) }
+func (e *Emulator) RetVal(ret uint64)  { e.SetReg(A0, ret) }
+func (e *Emulator) RetErr(errno int64) { e.SetReg(A0, uint64(-errno)) }
 
 // mmap syscall number 222
 func sys_mmap(e *Emulator, s SysCall) error {
@@ -85,8 +103,13 @@ func sys_write(e *Emulator, s SysCall) error {
 
 // void _exit(int status);
 func sys_exit(e *Emulator, s SysCall) error {
-	fmt.Printf("exiting with %d\n", s.a0)
+	// fmt.Printf("exiting with %d\n", s.a0)
 	return Done{int(s.a0)}
+}
+
+func sys_sigaltstack(e *Emulator, s SysCall) error {
+	e.RetVal(0)
+	return nil
 }
 
 // A C scather/gather vector type
@@ -99,6 +122,11 @@ type iovec struct {
 
 func sys_set_tid_address(e *Emulator, s SysCall) error {
 	// e.SetReg(A0, uint64(s.a0))
+	e.RetVal(1)
+	return nil
+}
+
+func sys_gettid(e *Emulator, s SysCall) error {
 	e.RetVal(1)
 	return nil
 }

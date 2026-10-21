@@ -189,17 +189,22 @@ func (e *Emulator) MapProgram(path string, args []string) error {
 	args = append(args[:0], append([]string{e.program.name}, args[0:]...)...)
 	vec := nullTerminateArgs(args)
 	size := (len(vec) + 0xf) &^ 0xf
-	argv := VirtAddr(e.Reg(Sp) - uint64(size))
+	argv := VirtAddr(e.Reg(Sp) - uint64(size)) // make room on stack
 	if err := e.WriteFrom(argv, vec); err != nil {
 		return err
 	}
+	e.SetReg(Sp, uint64(argv))
 
 	// set up the stack for the main function
 	// int main(int argc, char *argv[], char *envp[])
 	// lets ignore all the errors because we can!
-	_ = push(e, uint64(0))            // evnp
-	_ = push(e, uint64(argv))         // argv
-	err = push(e, int32(len(args)+1)) // argc
+	// TODO: might need to clean out memory for these things cos fork/reset
+	// reuse memory
+	_ = push(e, uint64(0))           // auxv a_val
+	_ = push(e, uint64(0))           // auxv a_type = AT_NULL
+	_ = push(e, uint64(0))           // envp NULL
+	_ = push(e, uint64(argv))        // argv
+	err = push(e, uint64(len(args))) // argc
 	return err
 }
 
